@@ -16,13 +16,13 @@ four and five times slower.
 
 | renderer                      | one `<a>` | one element | nested page | 1000 rows | escape-heavy | overall |
 | ----------------------------- | --------: | ----------: | ----------: | --------: | -----------: | ------: |
-| no escaping                   |     10.00 |        4.22 |        3.65 |      2.50 |       352.05 |   10.63 |
-| hand-written                  |      1.62 |        1.54 |        1.30 |      1.43 |         0.90 |    1.33 |
+| no escaping                   |      8.86 |        4.10 |        3.69 |      2.51 |       248.78 |    9.65 |
+| hand-written                  |      1.60 |        1.57 |        1.29 |      1.41 |         0.86 |    1.32 |
 | **@itsy/html**                |      1.00 |        1.00 |        1.00 |      1.00 |         1.00 |    1.00 |
-| hono/html                     |      0.80 |        0.81 |        0.79 |      0.85 |         0.81 |    0.81 |
-| ghtml                         |      0.79 |        0.91 |        0.76 |      0.81 |         0.66 |    0.78 |
-| htm + preact-render-to-string |      0.31 |        0.27 |        0.34 |      0.26 |         1.28 |    0.40 |
-| lit + @lit-labs/ssr           |      0.19 |        0.20 |        0.20 |      0.18 |         0.38 |    0.22 |
+| hono/html                     |      0.82 |        0.80 |        0.77 |      0.84 |         0.85 |    0.81 |
+| ghtml                         |      0.83 |        0.90 |        0.76 |      0.81 |         0.66 |    0.79 |
+| htm + preact-render-to-string |      0.37 |        0.31 |        0.37 |      0.28 |         1.30 |    0.43 |
+| lit + @lit-labs/ssr           |      0.19 |        0.19 |        0.20 |      0.18 |         0.38 |    0.22 |
 
 ## Time per render
 
@@ -30,13 +30,13 @@ One unit per column, so a column can be read straight down. Lower is faster.
 
 | renderer                      | one `<a>` | one element | nested page | 1000 rows | escape-heavy |
 | ----------------------------- | --------: | ----------: | ----------: | --------: | -----------: |
-| no escaping                   |   24.4 ns |     88.5 ns |     1.76 µs |    195 µs |      0.01 µs |
-| hand-written                  |    151 ns |      243 ns |     4.93 µs |    340 µs |      4.27 µs |
-| **@itsy/html**                |    244 ns |      374 ns |     6.42 µs |    487 µs |      3.84 µs |
-| hono/html                     |    304 ns |      461 ns |     8.18 µs |    574 µs |      4.75 µs |
-| ghtml                         |    309 ns |      412 ns |     8.42 µs |    599 µs |      5.79 µs |
-| htm + preact-render-to-string |    792 ns |     1371 ns |     18.8 µs |   1839 µs |      3.01 µs |
-| lit + @lit-labs/ssr           |   1273 ns |     1872 ns |     32.5 µs |   2665 µs |      10.2 µs |
+| no escaping                   |   14.5 ns |     47.4 ns |     0.89 µs |   97.3 µs |      0.01 µs |
+| hand-written                  |   80.7 ns |      124 ns |     2.54 µs |    173 µs |      2.21 µs |
+| **@itsy/html**                |    129 ns |      194 ns |     3.30 µs |    244 µs |      1.91 µs |
+| hono/html                     |    157 ns |      244 ns |     4.30 µs |    291 µs |      2.25 µs |
+| ghtml                         |    156 ns |      216 ns |     4.36 µs |    303 µs |      2.89 µs |
+| htm + preact-render-to-string |    349 ns |      621 ns |     9.03 µs |    869 µs |      1.47 µs |
+| lit + @lit-labs/ssr           |    683 ns |     1025 ns |     16.8 µs |   1389 µs |      5.02 µs |
 
 ## What the columns are
 
@@ -95,13 +95,18 @@ markers — `<!--lit-part-->` and `<!--lit-node-->` — which travel on every re
 
 ## Caveats
 
+- Each figure is the median of twenty batches, taken after every renderer has been run enough to
+  grow the V8 heap. Skipping that warmup makes whichever renderer is measured first read two to
+  three times slow, so the harness does it explicitly and warns if a run was too noisy to trust.
+- Repeated runs on the same machine hold the ratios to about ±0.02 and the times to about ±5%.
+  Read the first table for the comparison and the second for the order of magnitude.
 - One machine, one runtime: Apple M5, Node 26.9.0, measured 20 September 2026 against lit 3.3.3,
   @lit-labs/ssr 4.1.0, hono 4.13.8, ghtml 4.0.2 and preact-render-to-string 6.7.0. Ratios travel
   between machines; nanoseconds do not.
 - The production build is what runs here. The development build adds the
   [markup check](/guide/checks), which runs once per call site, not once per render.
 - Every renderer caches its analysis of a template on the strings array, so the first render of a
-  call site costs more than the rest. For @itsy/html that is about 1.9 µs against 244 ns.
+  call site costs more than the rest. For @itsy/html that is about 810 ns against 129 ns.
   `pnpm bench:full` measures both.
 - uhtml was meant to be here. Version 5 dropped its `/ssr` export and is browser-only, so there
   is nothing to compare on a server. @kitajs/html is left out because it is JSX and needs a

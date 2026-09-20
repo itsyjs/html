@@ -3,26 +3,12 @@
 // Every contender does the whole job inside the timed function, including the
 // step that produces the final string. For lit that means @lit-labs/ssr, since
 // `html` on its own only builds a TemplateResult and renders nothing.
+//
+// This is mitata's own output, with distributions and histograms. For the tables
+// that can be read down a column, run table.js instead.
 
 import { barplot, bench, do_not_optimize, group, run, summary } from 'mitata';
-import { escaped, raw } from './renderers/baseline.js';
-import ghtml from './renderers/ghtml.js';
-import hono from './renderers/hono.js';
-import itsy from './renderers/itsy.js';
-import lit from './renderers/lit.js';
-import preact from './renderers/preact.js';
-
-const contenders = [itsy, hono, ghtml, preact, lit, escaped, raw];
-
-// Fairness guard: prove each renderer really rendered every row and really escaped,
-// before any of it is timed. A contender that quietly skipped the work would win.
-const verify = () => {
-  for (const r of contenders) {
-    const rows = (r.table().match(/<tr[ >]/g) ?? []).length;
-    if (rows !== 1000) throw new Error(`${r.name}: rendered ${rows} rows, expected 1000`);
-    if (!r.unsafe && r.escape().includes('<script>')) throw new Error(`${r.name}: left a <script> unescaped`);
-  }
-};
+import { baseline as itsy, contenders, verify, warmup } from './harness.js';
 
 const CASES = {
   link: 'one <a>, two values',
@@ -33,6 +19,9 @@ const CASES = {
 };
 
 verify();
+// Grow the heap before anything is timed. Without this the first renderer measured
+// pays for growing it and reads 2-3x slow; see harness.js.
+warmup();
 
 for (const [key, blurb] of Object.entries(CASES)) {
   group(`${key} — ${blurb}`, () => {

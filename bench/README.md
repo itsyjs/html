@@ -21,6 +21,13 @@ node escape.js  # the escaper on its own
 node size.js    # bytes emitted
 ```
 
+`harness.js` holds the contenders, the fairness guard and the timer that both
+`table.js` and `server.js` use. Read the comment at the top of it before changing
+how anything is timed: the numbers used to depend on `verify()` happening to warm
+the V8 heap, and whichever renderer went first without that read two to three times
+slow. It now warms and calibrates everything before recording anything, reports the
+median of twenty batches, and warns on stderr when a run was too noisy to publish.
+
 `table.js` exists because mitata picks a unit per row, which is right when you read
 one row and useless when you read down a column: 947 µs against 2.66 ms against 190 µs
 is three conversions before you know who won. It gives each column one unit, and the
