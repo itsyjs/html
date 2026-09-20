@@ -134,9 +134,9 @@ export const safeUrl = (value: string, schemes: ReadonlySet<string>, enc = esc):
   if (colon === -1) return enc(value);
   // Browsers ignore whitespace and control characters while reading a scheme,
   // so `"  JaVa\tScRiPt:"` means `javascript:` to them. Strip before scanning.
-  // oxlint-disable-next-line no-control-regex -- see the two lines above
   const scheme = value
     .slice(0, colon)
+    // oxlint-disable-next-line no-control-regex -- stripping them is the point; see above
     .replace(/[\s\u0000-\u001f]+/g, '')
     .toLowerCase();
   // Not a scheme at all (a colon inside a path or a query), or an allowed one: keep the URL, just escaped.
