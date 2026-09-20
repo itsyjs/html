@@ -40,10 +40,19 @@
   text-transform: uppercase;
   color: var(--vp-c-text-2);
 }
+/* Under 640px VitePress bleeds a code block past the prose with a -24px side
+   margin. The `margin: 0` that joins the two halves into one card drops that
+   along with the vertical gap, leaving the output inset under a fence that runs
+   edge to edge. Bleeding the wrapper restores the width and keeps the tag 20px
+   from the block's own left edge, where it sits at every other width. */
 @media (max-width: 639px) {
   .vp-doc div[class*='language-']:has(+ .run-output),
   .vp-doc .run-output > div[class*='language-'] {
     border-radius: 0;
+  }
+  .vp-doc .run-output {
+    margin-right: -24px;
+    margin-left: -24px;
   }
 }
 
