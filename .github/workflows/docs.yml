@@ -1,0 +1,50 @@
+# Builds docs/ with VitePress and publishes it to GitHub Pages. The base path is
+# taken from the repository name rather than hard-coded, so the same workflow is
+# correct wherever this repo lives; on a custom domain, drop DOCS_BASE and the
+# config falls back to '/'.
+#
+# Needs Pages enabled for the repository with "GitHub Actions" as the source.
+# Until that is done, `configure-pages` fails the build job: it looks the site up
+# over the API and there is nothing to find. The workflow cannot turn Pages on
+# itself — that takes a token with admin rights, which GITHUB_TOKEN is not.
+name: Docs
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+# One deploy at a time, and never cancel one halfway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # pnpm (version from `packageManager`), Node, and the install, in one step.
+      # `runtime: node` means the current LTS; without it no Node is installed at all.
+      # No --frozen-lockfile flag: pnpm already refuses to update a lockfile when CI is set.
+      - uses: pnpm/setup@v2
+        with:
+          runtime: node
+          cache: true
+      - uses: actions/configure-pages@v6
+      - run: pnpm docs:build
+        env:
+          DOCS_BASE: /${{ github.event.repository.name }}/
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs/.vitepress/dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v5

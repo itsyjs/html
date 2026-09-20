@@ -1,0 +1,7 @@
+{
+  // The library on its own, with no Node types: if this compiles, src/ uses the
+  // ES2022 language and nothing from any runtime. `pnpm typecheck` runs both configs.
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": [] },
+  "include": ["src"]
+}

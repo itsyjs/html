@@ -1,0 +1,93 @@
+/* Source Sans 3 and Source Code Pro, self-hosted through fontsource: no
+   third-party request and no swap once the page has painted. */
+:root {
+  --vp-font-family-base: 'Source Sans 3 Variable', ui-sans-serif, system-ui, sans-serif;
+  --vp-font-family-mono: 'Source Code Pro Variable', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+/* A ```ts run fence and its output read as one card: the code on top, a
+   hairline between, and a small tag on that line naming the lower half. */
+.vp-doc div[class*='language-']:has(+ .run-output) {
+  margin-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.vp-doc .run-output {
+  position: relative;
+  margin: 0 0 16px;
+}
+.vp-doc .run-output > div[class*='language-'] {
+  margin: 0;
+  border-top: 1px solid var(--vp-c-divider);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.vp-doc .run-output::before {
+  content: '\2193  output';
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: 20px;
+  transform: translateY(-50%);
+  padding: 1px 7px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 999px;
+  background: var(--vp-c-bg);
+  font-family: var(--vp-font-family-mono);
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vp-c-text-2);
+}
+@media (max-width: 639px) {
+  .vp-doc div[class*='language-']:has(+ .run-output),
+  .vp-doc .run-output > div[class*='language-'] {
+    border-radius: 0;
+  }
+}
+
+/* A custom block names its type with a bold line and a pale wash, both in the
+   body's own color. Most blocks in these docs pass a custom title, so the words
+   WARNING and DANGER are never rendered -- the wash was the only signal left.
+   Giving the title its own hue makes the type readable at a glance, and code
+   spans inside it follow so the line stays one piece. */
+.vp-doc .custom-block .custom-block-title,
+.vp-doc .custom-block.details > summary {
+  color: var(--itsy-c-quiet-1);
+}
+.vp-doc .custom-block.tip .custom-block-title {
+  color: var(--vp-c-tip-1);
+}
+.vp-doc .custom-block.warning .custom-block-title {
+  color: var(--vp-c-warning-1);
+}
+.vp-doc .custom-block.danger .custom-block-title {
+  color: var(--vp-c-danger-1);
+}
+.vp-doc .custom-block .custom-block-title code,
+.vp-doc .custom-block.details > summary code {
+  color: inherit;
+}
+
+/* The hero mark is pixel art, and pixel art has a size past which you read the
+   blocks instead of the shape -- at the stock 320px the spider stops looking
+   like a spider. These are VitePress's own three steps at roughly half. */
+.VPHero .image-src {
+  max-width: 128px;
+  max-height: 128px;
+}
+
+@media (min-width: 640px) {
+  .VPHero .image-src {
+    max-width: 144px;
+    max-height: 144px;
+  }
+}
+
+@media (min-width: 960px) {
+  .VPHero .image-src {
+    max-width: 160px;
+    max-height: 160px;
+  }
+}

@@ -1,0 +1,196 @@
+{
+  "name": "@itsy/html",
+  "version": "0.1.0",
+  "description": "tiny isomorphic HTML renderer — tagged templates in, escaped strings out; context-aware escaping, URL scheme guard, one attribute helper, no hydration",
+  "keywords": [
+    "escape",
+    "html",
+    "isomorphic",
+    "ssr",
+    "tagged-template",
+    "template",
+    "tiny",
+    "typescript",
+    "xss"
+  ],
+  "homepage": "https://github.com/itsyjs/html#readme",
+  "bugs": "https://github.com/itsyjs/html/issues",
+  "license": "MIT",
+  "author": "Dave Honneffer <pearofducks@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/itsyjs/html.git"
+  },
+  "files": [
+    "dist",
+    "AGENTS.md"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "module": "./dist/index.js",
+  "imports": {
+    "#*": "./src/*.ts"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "development": "./dist/index.dev.js",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./a11y": {
+      "types": "./dist/a11y.d.ts",
+      "development": "./dist/a11y.dev.js",
+      "import": "./dist/a11y.js",
+      "default": "./dist/a11y.js"
+    },
+    "./attrs": {
+      "types": "./dist/attrs.d.ts",
+      "development": "./dist/attrs.dev.js",
+      "import": "./dist/attrs.js",
+      "default": "./dist/attrs.js"
+    },
+    "./check": {
+      "types": "./dist/check.d.ts",
+      "development": "./dist/check.dev.js",
+      "import": "./dist/check.js",
+      "default": "./dist/check.js"
+    },
+    "./frame": {
+      "types": "./dist/frame.d.ts",
+      "development": "./dist/frame.dev.js",
+      "import": "./dist/frame.js",
+      "default": "./dist/frame.js"
+    },
+    "./util": {
+      "types": "./dist/util.d.ts",
+      "development": "./dist/util.dev.js",
+      "import": "./dist/util.js",
+      "default": "./dist/util.js"
+    },
+    "./create": {
+      "types": "./dist/create.d.ts",
+      "development": "./dist/create.dev.js",
+      "import": "./dist/create.js",
+      "default": "./dist/create.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsdown && publint",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.src.json",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
+    "test": "node --import ./test/setup.ts --test test/*.test.ts",
+    "size": "size-limit",
+    "size:check": "export-size .",
+    "bench": "tsdown && pnpm --dir bench install --ignore-workspace && pnpm --dir bench start",
+    "bench:full": "tsdown && pnpm --dir bench install --ignore-workspace && pnpm --dir bench full",
+    "bench:size": "tsdown && pnpm --dir bench install --ignore-workspace && pnpm --dir bench size",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "check": "oxfmt --check && oxlint && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.src.json && tsdown && publint && node --import ./test/setup.ts --test test/*.test.ts",
+    "preversion": "npm run check",
+    "postversion": "git push --follow-tags"
+  },
+  "devDependencies": {
+    "@fontsource-variable/source-code-pro": "^5.3.0",
+    "@fontsource-variable/source-sans-3": "^5.3.0",
+    "@size-limit/esbuild": "^14.0.0",
+    "@size-limit/file": "^14.0.0",
+    "@types/node": "^26.5.1",
+    "export-size": "^0.9.0",
+    "oxfmt": "^0.68.0",
+    "oxlint": "^1.83.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "publint": "^0.3.24",
+    "size-limit": "^14.0.0",
+    "tsdown": "^0.23.0",
+    "typescript": "^7.0.2",
+    "vitepress": "^1.6.4"
+  },
+  "size-limit": [
+    {
+      "name": "@itsy/html",
+      "path": "dist/index.js",
+      "import": "{ html, attrs, raw }",
+      "limit": "2 KB"
+    },
+    {
+      "name": "@itsy/html (dev)",
+      "path": "dist/index.dev.js",
+      "import": "{ html, attrs, raw }",
+      "limit": "4.5 KB"
+    },
+    {
+      "name": "@itsy/html/attrs",
+      "path": "dist/attrs.js",
+      "import": "{ attrs, cx }",
+      "limit": "1 KB"
+    },
+    {
+      "name": "@itsy/html/check",
+      "path": "dist/check.js",
+      "import": "{ check }",
+      "limit": "150 B"
+    },
+    {
+      "name": "@itsy/html/check (dev)",
+      "path": "dist/check.dev.js",
+      "import": "{ check }",
+      "limit": "4 KB"
+    },
+    {
+      "name": "@itsy/html/a11y",
+      "path": "dist/a11y.js",
+      "import": "{ a11y, without }",
+      "limit": "150 B"
+    },
+    {
+      "name": "@itsy/html/a11y (dev)",
+      "path": "dist/a11y.dev.js",
+      "import": "{ a11y, without }",
+      "limit": "2.5 KB"
+    },
+    {
+      "name": "@itsy/html/frame",
+      "path": "dist/frame.js",
+      "import": "{ frame, head, element }",
+      "limit": "3 KB"
+    },
+    {
+      "name": "@itsy/html/frame (dev)",
+      "path": "dist/frame.dev.js",
+      "import": "{ frame, head, element }",
+      "limit": "5 KB"
+    },
+    {
+      "name": "@itsy/html/util",
+      "path": "dist/util.js",
+      "import": "{ join, map, range, when, choose, wrap, comment }",
+      "limit": "1.2 KB"
+    },
+    {
+      "name": "@itsy/html/util (join only)",
+      "path": "dist/util.js",
+      "import": "{ join }",
+      "limit": "150 B"
+    },
+    {
+      "name": "@itsy/html/create",
+      "path": "dist/create.js",
+      "import": "{ createHtml }",
+      "limit": "2 KB"
+    }
+  ],
+  "engines": {
+    "node": ">=18.17"
+  },
+  "packageManager": "pnpm@11.1.2"
+}

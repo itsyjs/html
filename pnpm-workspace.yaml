@@ -1,0 +1,6 @@
+allowBuilds:
+  esbuild: true
+# Not a monorepo — pnpm 11's home for settings. size-limit's esbuild plugin
+# needs its install script approved to link the platform binary.
+onlyBuiltDependencies:
+  - esbuild

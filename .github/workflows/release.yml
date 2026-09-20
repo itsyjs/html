@@ -1,0 +1,34 @@
+# Publishes on a version tag, with npm provenance. `npm version x.y.z` runs `pnpm check`,
+# commits, tags, and pushes the tag (see `preversion`/`postversion` in package.json); this
+# workflow does the rest. Provenance needs a CI runner with an OIDC token, so publishing
+# from a laptop is not an option while `publishConfig.provenance` is on.
+#
+# Needs an `NPM_TOKEN` secret (an automation token for the @itsy scope). `pnpm/setup`
+# installs pnpm and Node and nothing else, so the registry credential is written to
+# ~/.npmrc in a step of its own; `actions/setup-node` used to do that through its
+# `registry-url` input. With npm's trusted publishing configured for this repository
+# instead, drop that step and the secret.
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # pnpm (version from `packageManager`), Node, and the install, in one step.
+      # `runtime: node` means the current LTS; without it no Node is installed at all.
+      # No --frozen-lockfile flag: pnpm already refuses to update a lockfile when CI is set.
+      - uses: pnpm/setup@v2
+        with:
+          runtime: node
+          cache: true
+      - run: pnpm check
+      - run: echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: pnpm publish --provenance --access public --no-git-checks

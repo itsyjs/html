@@ -1,0 +1,160 @@
+/* A palette built from the official HTML5 badge. Two colors carry it: the
+   outer shield, oklch(62.5% 0.191 35.7), and the inner facet,
+   oklch(67.2% 0.184 41.1) -- published as #E34F26 and #EF652A, kept here in
+   their source form in this one comment so they can be checked against w3.org.
+
+   Neither can carry small text on white -- they measure 3.88:1 and 3.20:1
+   against a 4.5:1 bar. So the two oranges are split by job: the real badge
+   colors go where nothing small sits on them (button fills, accents, the hero),
+   and a deepened version of the same hue carries text. Every ratio noted below
+   was measured, not estimated.
+
+   Written in oklch because the three numbers are the design: lightness carries
+   the contrast, chroma carries how loud a color is, and hue is what keeps the
+   severity colors apart. Each value round-trips to the exact sRGB byte it
+   replaced. */
+
+:root {
+  /* Links, active nav, the code-group tab bar, search hit highlight. 1 is the
+     darkest in light mode, 3 the lightest -- read the first number. brand-1 has
+     to clear 4.5:1 on both the page and the sidebar, which is why it is not the
+     lighter brand-2 (that one manages 4.61 on white but only 4.26 on the
+     sidebar). */
+  --vp-c-brand-1: oklch(55.2% 0.179 34.9); /* 5.24 on white, 4.85 on the sidebar */
+  --vp-c-brand-2: oklch(58.3% 0.186 35.3); /* 4.61 on white -- link hover */
+  --vp-c-brand-3: oklch(62.5% 0.191 35.7); /* the shield itself; accent only, needs 3:1 */
+  --vp-c-brand-soft: oklch(62.5% 0.191 35.7 / 0.14);
+
+  /* The CTA is deepened out of the badge orange so a white label clears 4.5:1
+     -- white on the badge orange itself is only 3.20. That leaves a narrow
+     window in dark mode: the fill has to stay dark enough to carry the label
+     and light enough to read against the page, which works out to a
+     contrast-vs-white range of 4.50 to 5.72. All three states sit inside it, so
+     one set still serves both themes. Set explicitly rather than inherited from
+     the brand ramp, because the ramp is tuned for text on the page and this is
+     text on a fill. */
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-text: var(--vp-c-white);
+  --vp-button-brand-bg: oklch(58.3% 0.186 35.3); /* white label 4.61:1, and 3.73 on the dark page */
+  --vp-button-brand-hover-border: transparent;
+  --vp-button-brand-hover-text: var(--vp-c-white);
+  --vp-button-brand-hover-bg: oklch(55.2% 0.179 34.9); /* 5.24:1, and 3.28 on the dark page */
+  --vp-button-brand-active-border: transparent;
+  --vp-button-brand-active-text: var(--vp-c-white);
+  --vp-button-brand-active-bg: oklch(53.6% 0.172 35.1); /* 5.59:1, and 3.07 on the dark page */
+
+  /* VitePress wires inline code to the brand color. Left alone, every code span
+     on the site turns orange -- the URL guard page alone has fifteen of them in
+     three paragraphs, which would leave the color meaning nothing. The gray
+     pill already separates code from prose, so the text goes back to neutral
+     and only code that is genuinely a link keeps the brand. */
+  --vp-code-color: var(--vp-c-text-1);
+  --vp-code-link-color: var(--vp-c-brand-1);
+  --vp-code-link-hover-color: var(--vp-c-brand-2);
+
+  /* The stock grays lean blue, which fights orange. A faint warm shift -- the
+     chroma is near zero, the hue is what does it. This also reaches the code
+     block background, which maps to --vp-c-bg-alt. */
+  --vp-c-bg-alt: oklch(97.3% 0.003 84.6);
+  --vp-c-bg-soft: oklch(97.3% 0.003 84.6);
+  --vp-c-divider: oklch(91.7% 0.006 75.4);
+  --vp-c-gutter: oklch(91.7% 0.006 75.4);
+
+  /* Code blocks come off --vp-c-bg-alt by default. Given their own value they
+     can sit lighter than it without dragging the sidebar and the search field
+     up with them. Lighter is what the syntax wants: kanagawa-lotus is dark on
+     this surface, so every step toward white buys token contrast -- the median
+     goes 4.61 to 4.78 and the faintest token 2.99 to 3.10. The warmth stays,
+     at a whisper of chroma, so the block still reads as a surface rather than
+     a hole in the page. The code-group tabs derive from this and follow. Dark
+     mode is left exactly as it was. */
+  --vp-code-block-bg: oklch(98.3% 0.003 84.6);
+
+  /* Custom blocks ship borderless, with the title the same color and size as
+     the body -- a 14% wash is the only thing marking the type. Most blocks in
+     these docs carry a custom title, so the words WARNING and DANGER never
+     appear at all. Hue is doing the whole job, so it gets a hairline too. */
+  --vp-custom-block-tip-border: oklch(62.5% 0.191 35.7 / 0.3);
+  --vp-custom-block-warning-border: oklch(79.52% 0.1617 86 / 0.35);
+  --vp-custom-block-danger-border: oklch(58.6% 0.222 17.6 / 0.28);
+  --vp-custom-block-info-border: oklch(55.3% 0.012 58.1 / 0.22);
+  --vp-custom-block-details-border: oklch(55.3% 0.012 58.1 / 0.22);
+
+  /* Brand text sitting on a brand wash rather than on the page. The wash lifts
+     the background just enough that brand-1 lands at 4.37, so anything on one
+     needs its own value: the tip block title and the error-code links in the
+     playground both sit there. Hover darkens, as it does elsewhere in light
+     mode -- the first number drops, the other two barely move. */
+  --itsy-c-brand-on-soft: oklch(51% 0.164 35.4); /* 5.17 on the wash */
+  --itsy-c-brand-on-soft-hover: oklch(45.06% 0.143 35.5); /* 6.63 */
+  --vp-c-tip-1: var(--itsy-c-brand-on-soft);
+
+  /* Severity walks away from the brand hue in both directions, which is now
+     just the third number: brand sits at 35, warning at 83, danger at 13.5.
+     The stock values crowd the brand and read as three shades of one orange. */
+  --vp-c-warning-1: oklch(53.5% 0.103 83.3); /* 5.21 on white */
+  --vp-c-danger-1: oklch(49.1% 0.184 13.5); /* 6.90 on white */
+  --vp-c-danger-soft: oklch(58.6% 0.222 17.6 / 0.14);
+
+  /* info and details have no semantic ramp of their own. They stay a warm
+     neutral -- details is the workhorse here at twelve uses and must not
+     shout, so the chroma stays at 0.01. */
+  --itsy-c-quiet-1: oklch(44.4% 0.01 73.6);
+
+  /* Large display type only, so the 3:1 bar applies and both stops clear it. */
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, oklch(62.5% 0.191 35.7) 30%, oklch(67.2% 0.184 41.1));
+}
+
+.dark {
+  /* A touch warmer than the light ramp and much quieter: hue 41 against 35, and
+     chroma 0.124 where the light side runs 0.179. A saturated orange on a dark
+     field halates -- it reads as a glow rather than as text. Dropping chroma at
+     constant lightness costs nothing in contrast (5.82 -> 5.96) and lands
+     beside the everforest-dark orange, already on the page in every code
+     block. */
+  --vp-c-brand-1: oklch(69.2% 0.124 41.3); /* 5.96 on the page, 6.28 on the code background */
+  --vp-c-brand-2: oklch(67.2% 0.133 41.1); /* 5.49 -- link hover */
+  --vp-c-brand-3: oklch(62.5% 0.191 35.7); /* accent only */
+  --vp-c-brand-soft: oklch(67.2% 0.184 41.1 / 0.16);
+
+  --vp-c-bg-alt: oklch(20.1% 0.004 84.6);
+  --vp-code-block-bg: var(--vp-c-bg-alt);
+  --vp-c-bg-soft: oklch(24.1% 0.005 67.6);
+  --vp-c-divider: oklch(29.9% 0.007 67.6);
+  --vp-c-gutter: oklch(0% 0 0);
+
+  --vp-custom-block-tip-border: oklch(67.2% 0.184 41.1 / 0.32);
+  --vp-custom-block-warning-border: oklch(81.7% 0.141 73.9 / 0.3);
+  --vp-custom-block-danger-border: oklch(70.9% 0.166 14.1 / 0.3);
+  --vp-custom-block-info-border: oklch(71.6% 0.009 56.3 / 0.2);
+  --vp-custom-block-details-border: oklch(71.6% 0.009 56.3 / 0.2);
+
+  --itsy-c-brand-on-soft: oklch(69.2% 0.124 41.3); /* 4.83 on the wash */
+  --itsy-c-brand-on-soft-hover: oklch(76.8% 0.103 40.9); /* 6.42 -- hover brightens in dark */
+  --vp-c-tip-1: var(--itsy-c-brand-on-soft);
+
+  /* Same hue story as the light side: brand 41, warning 82.5, danger 5.8. */
+  --vp-c-warning-1: oklch(86.4% 0.139 82.5); /* 8.18 on the warning wash */
+  --vp-c-danger-1: oklch(74.3% 0.164 5.8); /* 5.86 on the danger wash */
+  --vp-c-danger-soft: oklch(64.5% 0.215 16.4 / 0.16);
+
+  --itsy-c-quiet-1: oklch(86.9% 0.004 56.4);
+
+  --vp-home-hero-name-background: linear-gradient(120deg, oklch(67.2% 0.184 41.1) 30%, oklch(76.8% 0.143 41.1));
+}
+
+/* oklch() has been baseline since 2023, and everything above degrades quietly
+   without it -- a link simply loses its color. The hero name is the exception:
+   it paints transparent text over a gradient, so if the gradient is not
+   understood there is nothing left to read. Give that one a flat fallback. */
+@supports not (color: oklch(0% 0 0)) {
+  :root {
+    --vp-home-hero-name-color: #e34f26;
+    --vp-home-hero-name-background: none;
+  }
+
+  .dark {
+    --vp-home-hero-name-color: #ef652a;
+  }
+}

@@ -1,0 +1,250 @@
+import { suite, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { attrs, html, raw } from '#index';
+import { check } from '#check';
+import type { Finding, RuleSet } from '#check';
+
+const s = (x: unknown) => String(x);
+const codes = (markup: unknown) => check(s(markup)).map((p) => p.code);
+
+suite('template audit: what the parser would repair', () => {
+  test('8: a tag never closed with >', () => {
+    assert.throws(() => html`<div class="foo" <p>hello</p></div>`, { code: 8, message: /never closed with `>`/ });
+    assert.throws(() => html`<div class="foo"`, { code: 8 });
+    assert.throws(() => html`<div class"foo">x</div>`, { code: 8, message: /missing `=`/ });
+  });
+  test('9: an element still open at the end, innermost first', () => {
+    assert.throws(() => html`<div><p>hello</p>`, { code: 9, message: /`<div>` is never closed.*raw\(\)/ });
+    assert.throws(() => html`<div><span>x`, { code: 9, message: /`<span>` is never closed/ });
+    assert.throws(() => html`<ul><li>a<li>b</ul>`, { code: 9, message: /`<li>` is never closed: `<li>` starts/ });
+    assert.throws(() => html`<p>${'x'}`, { code: 9 });
+  });
+  test('10: a close tag that matches nothing, or the wrong element', () => {
+    assert.throws(() => html`<b><i>x</b></i>`, { code: 10, message: /`<\/b>` closes `<i>`: expected `<\/i>` first/ });
+    assert.throws(() => html`</div>`, { code: 10, message: /closes nothing/ });
+    assert.throws(() => html`<p><div>x</div></p>`, { code: 9, message: /`<p>` is never closed: `<div>` starts/ });
+    assert.throws(() => html`<div><p>x</div>`, { code: 10, message: /`<\/div>` closes `<p>`/ });
+  });
+  test('11: /> on a non-void element', () => {
+    assert.throws(() => html`<div />`, { code: 11, message: /Write `<div><\/div>`/ });
+    assert.throws(() => html`<my-el a="1" />`, { code: 11 });
+    assert.doesNotThrow(() => html`<br/><img src="x"/><input/>`);
+    assert.doesNotThrow(() => html`<svg viewBox="0 0 1 1"><g><path d="M0 0"/><circle r="1"/></g></svg><svg/>`);
+  });
+  test('12: an end tag on a void element', () => {
+    assert.throws(() => html`<br></br>`, { code: 12, message: /second <br>/ });
+    assert.throws(() => html`<img src="x"></img>`, { code: 12, message: /ignores it/ });
+  });
+  test('13: nesting the parser rewrites', () => {
+    assert.throws(() => html`<a href="/"><a href="/x">y</a></a>`, {
+      code: 13,
+      message: /`<a>` cannot be a child of `<a>`/,
+    });
+    assert.throws(() => html`<button><span><button>x</button></span></button>`, { code: 13 });
+    assert.throws(() => html`<h1><h2>x</h2></h1>`, { code: 13 });
+    assert.throws(() => html`<form><div><form></form></div></form>`, { code: 13 });
+    assert.throws(() => html`<table><tr><td>x</td></tr></table>`, {
+      code: 13,
+      message: /`<tr>` cannot be a child of `<table>`/,
+    });
+    assert.throws(() => html`<p><span><div>x</div></span></p>`, {
+      code: 13,
+      message: /`<div>` cannot be inside `<p>`/,
+    });
+  });
+  test('14: the same attribute twice on one tag', () => {
+    assert.throws(() => html`<a class="x" class="${'y'}">z</a>`, { code: 14, message: /`class` appears twice/ });
+  });
+  test('legal HTML passes: voids, raw text, comments, custom elements', () => {
+    assert.doesNotThrow(() => html`<dd><dl><dt>x</dt></dl></dd>`);
+    assert.doesNotThrow(() => html`<input><br><img src="x"><hr>`);
+    assert.doesNotThrow(() => html`<script>if (a < b && c > d) { "</div>" }</script>`);
+    assert.doesNotThrow(() => html`<style>a > b { }</style>`);
+    assert.doesNotThrow(() => html`<textarea><div></textarea>`);
+    assert.doesNotThrow(() => html`<!-- <div> --><!doctype html>a < b<a title="x > y">x</a>`);
+    assert.doesNotThrow(() => html`<a href=/x>y</a><a href = "/x">y</a>`);
+    assert.doesNotThrow(() => html`<my-el><td>x</td></my-el>`);
+    assert.doesNotThrow(() => html`<p><template><div>x</div></template></p>`);
+    assert.doesNotThrow(() => html`<div ${attrs({ class: 'x' })}>x</div>`);
+    assert.doesNotThrow(() => html`<svg><foreignObject><br><div><p>x</p></div></foreignObject></svg>`);
+    assert.doesNotThrow(() => html`<script>"</scripts>"</script>`);
+  });
+  test('omitted end tags are reported, even where the spec allows them', () => {
+    assert.throws(() => html`<ul><li>a<li>b</ul>`, { code: 9 });
+    assert.throws(() => html`<select><option>a<option>b</select>`, { code: 9 });
+    assert.throws(() => html`<table><tbody><tr><td>a<td>b</table>`, { code: 9 });
+    assert.throws(() => html`<dl><dt>a<dd>b<dd>c</dl>`, { code: 9 });
+    assert.throws(() => html`<li>${'x'}`, { code: 9 });
+    assert.throws(() => html`<td>${'x'}`, { code: 9 });
+    assert.throws(() => html`<option value="1">`, { code: 9 });
+    assert.throws(() => html`<div><p>x</div>`, { code: 10 });
+  });
+  test('a deliberately unmatched tag goes through raw()', () => {
+    assert.doesNotThrow(() => html`${raw('<div class="wrapper">')}<p>x</p>`);
+    assert.doesNotThrow(() => html`<p>x</p>${raw('</div>')}`);
+  });
+});
+
+suite('check(): the output validator', () => {
+  test('returns problems in document order, with position and context', () => {
+    assert.deepEqual(check('<div>'), [{ code: 9, message: '`<div>` is never closed', at: 0, near: '<div>' }]);
+    assert.deepEqual(codes('<b><i>x</b><br></br>'), [10, 12]);
+    assert.deepEqual(codes('<div />'), [11, 9]);
+    assert.deepEqual(check('<!doctype html><html><head><title>t</title></head><body><p>x</p></body></html>'), []);
+    assert.deepEqual(codes('<!doctype html><html><head><title>t</title></head><body><p>x</body></html>'), [10]);
+  });
+  test('sees across templates and through attrs() spreads', () => {
+    const inner = html`<div>x</div>`;
+    const outer = html`<p>${inner}</p>`;
+    assert.deepEqual(codes(outer), [9, 10]); // the <p> is left open by <div>, then </p> closes nothing
+    assert.deepEqual(codes(html`<a class="x" ${attrs({ class: 'y' })}>z</a>`), [14]);
+  });
+  test('15 and 16: dangling id references and duplicate ids', () => {
+    assert.deepEqual(codes('<label for="a">x</label>'), [15]);
+    assert.match(check('<i id="a"></i><b aria-labelledby="a b"></b>')[0]!.message, /aria-labelledby="b"/);
+    assert.deepEqual(codes('<i id="a"></i><i id="a"></i>'), [16]);
+    assert.deepEqual(check('<label for="a">x</label>', { ids: false }), []);
+  });
+  test('19: a URL the guard blocked, through a template, attrs() and raw()', () => {
+    assert.deepEqual(codes(html`<a href="${'javascript:x'}">y</a>`), [19]);
+    assert.match(check(html`<img src="${'vbscript:x'}">`)[0]!.message, /src="about:blank#blocked"/);
+    assert.deepEqual(codes(html`<form ${attrs({ action: 'ftp://x' })}></form>`), [19]);
+    assert.deepEqual(codes(html`<a href="${'/ok'}">y</a><a href="${'data:image/png;base64,x'}">y</a>`), []);
+    assert.deepEqual(codes(html`<a href="${'javascript:x'}">y</a>`.toString()), [19]); // the string is enough
+    assert.deepEqual(
+      check(html`<a href="${'javascript:x'}">y</a>`, { ids: false }).map((p) => p.code),
+      [19],
+    ); // ids off does not turn it off
+    assert.doesNotThrow(() => html`<a href="about:blank#blocked">y</a>`); // a template audit never reports it
+  });
+  test('popovertarget, commandfor and itemref are id references too', () => {
+    assert.deepEqual(codes('<button popovertarget="p">x</button>'), [15]);
+    assert.deepEqual(codes('<button popovertarget="p" commandfor="p">x</button><div id="p" popover></div>'), []);
+    assert.deepEqual(codes('<div itemref="a b"></div><i id="a"></i>'), [15]);
+  });
+  test('a Turkish dotted capital I does not shift every offset after it', () => {
+    // '\u0130'.toLowerCase() is two characters, so lowercasing the whole string used to move every
+    // index after it and the scan came apart: this threw code 10 and check() reported four problems.
+    assert.doesNotThrow(() => html`<h1>\u0130stanbul</h1>`);
+    assert.equal(String(html`<p title="\u0130x">y</p>`), '<p title="\u0130x">y</p>');
+    assert.deepEqual(codes('<nav aria-label="\u0130stanbul"><a href="/">Ev</a></nav>'), []);
+    assert.deepEqual(codes('<p>\u0130</p><div>'), [9]); // and the offsets after it are still right
+    assert.deepEqual(codes('<P>\u0130</P>'), []); // ASCII names still lowercase
+  });
+  test('foreign content: svg self-closes, a foreignObject is HTML again', () => {
+    assert.deepEqual(codes('<svg><path d="M0 0"/><foreignObject><br></foreignObject></svg>'), []);
+    assert.deepEqual(codes('<svg><foreignObject><div />x</foreignObject></svg>'), [11, 10]);
+  });
+});
+
+// What a rule set sees. These pin the contract src/a11y.ts is written against, so a change
+// here should break loudly rather than quietly misinform a rule.
+const trace = (markup: string, ids = true) => {
+  const log: string[] = [];
+  const spy: RuleSet = () => ({
+    open: (tag, a, at, anc) =>
+      log.push(`open ${tag}@${at} [${anc.join('>')}] {${[...a].map(([k, v]) => `${k}=${v}`).join(',')}}`),
+    close: (tag, at, text) => log.push(`close ${tag}@${at} ${text}`),
+    end: (map) => log.push(`end ${[...map.keys()].join(',')}`),
+  });
+  check(markup, { ids, a11y: spy });
+  return log;
+};
+const found = (markup: string, rule: RuleSet) => check(markup, { a11y: rule }).filter((p) => 'rule' in p) as Finding[];
+
+suite('the visitor a rule set is handed', () => {
+  test('void elements open but never close, and are not text', () => {
+    assert.deepEqual(trace('<p><img src="a"><br></p>'), [
+      'open p@0 [] {}',
+      'open img@3 [p] {src=a}',
+      'open br@16 [p] {}',
+      'close p@0 false', // an element holding only images holds no text
+      'end ',
+    ]);
+  });
+  test('ancestors are the real ones: whatever the browser closed is closed first', () => {
+    assert.deepEqual(trace('<p>text<div>x</div>'), [
+      'open p@0 [] {}',
+      'close p@0 true', // the browser closes <p> here, so a rule sees it close before <div> opens
+      'open div@7 [] {}',
+      'close div@7 true',
+      'end ',
+    ]);
+  });
+  test('attribute names lowercase, values verbatim, a bare attribute is present and empty', () => {
+    const [img] = trace('<IMG SRC="/A.png" ALT Data-X="Keep Me">');
+    assert.equal(img, 'open img@0 [] {src=/A.png,alt=,data-x=Keep Me}');
+  });
+  test('text bubbles up, whitespace is not text', () => {
+    assert.deepEqual(trace('<button><span>Save</span></button>').slice(2), [
+      'close span@8 true',
+      'close button@0 true',
+      'end ',
+    ]);
+    assert.deepEqual(trace('<h2> \n </h2>'), ['open h2@0 [] {}', 'close h2@0 false', 'end ']);
+  });
+  test('the text inside a jumped-over element still counts', () => {
+    assert.deepEqual(trace('<title>Hi</title><style> </style>').slice(1, 4), [
+      'close title@0 true',
+      'open style@17 [] {}',
+      'close style@17 false',
+    ]);
+  });
+  test('close reports where the element started', () => {
+    assert.deepEqual(trace('<section><i>x</i></section>').slice(2), ['close i@9 true', 'close section@0 true', 'end ']);
+  });
+  test('every id reaches end(), even with the id checks turned off', () => {
+    assert.deepEqual(trace('<i id="a"></i><b id="b"></b>', false).at(-1), 'end a,b');
+    assert.deepEqual(trace('<i id="a"></i><b id="b"></b>', true).at(-1), 'end a,b');
+  });
+  test('findings carry a rule name and the markup near it, and sort into page order', () => {
+    const rule: RuleSet = (report) => ({
+      open: (tag, a, at) => {
+        if (tag === 'img' && !a.has('alt')) report('img-alt', `\`<img>\` has no \`alt\``, at);
+      },
+    });
+    const out = check('<a href="x">y</a><img src="b"><img src="c" alt="">', { a11y: rule });
+    assert.deepEqual(
+      out.map((p) => ('rule' in p ? p.rule : p.code)),
+      ['img-alt'],
+    );
+    assert.match((out[0] as Finding).near, /<img src="b">/);
+    assert.equal((out[0] as Finding).at, 17);
+  });
+  test('markup problems and findings come back in one list, in page order', () => {
+    const rule: RuleSet = (report) => ({ open: (tag, _a, at) => tag === 'img' && report('seen-img', 'an image', at) });
+    assert.deepEqual(
+      found('<img src="a"><div>', rule).map((f) => f.rule),
+      ['seen-img'],
+    );
+    const mixed = check('<img src="a"><div>', { a11y: rule });
+    assert.deepEqual(
+      mixed.map((p) => ('rule' in p ? p.rule : p.code)),
+      ['seen-img', 9],
+    );
+  });
+  test('no rule set, no findings, and the markup problems are untouched', () => {
+    assert.deepEqual(codes('<div>'), [9]);
+    assert.deepEqual(check('<div>').length, 1);
+  });
+  test('a self-closing element in foreign content still closes', () => {
+    // Without this the rule set waits forever for an element that never ends, and the close of
+    // whatever was watching around it never lands.
+    assert.deepEqual(trace('<svg><a href="/x"/></svg>'), [
+      'open svg@0 [] {}',
+      'open a@5 [svg] {href=/x}',
+      'close a@5 false',
+      'close svg@0 false',
+      'end ',
+    ]);
+  });
+  test('foreign content still reports', () => {
+    assert.deepEqual(trace('<svg><title>Map</title></svg>'), [
+      'open svg@0 [] {}',
+      'open title@5 [svg] {}',
+      'close title@5 true',
+      'close svg@0 true',
+      'end ',
+    ]);
+  });
+});

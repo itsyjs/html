@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    // Same floor as @itsy/corgi: native class fields and `class extends String`
+    // need no helpers on Node 18.17+, Deno, Bun, Workers, evergreen browsers.
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    // No DOM lib on purpose: this renderer never touches a document. If it
+    // typechecks against ES2022 alone, it is provably isomorphic.
+    "lib": ["ES2022"],
+    // @types/node is for the test suite and the config files. tsconfig.src.json
+    // compiles src/ without it, so the library cannot lean on Node by accident.
+    "types": ["node"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+
+    // Author with explicit `.ts` specifiers so `node --test` runs the source
+    // via type-stripping; tsdown rewrites them to `.js` on build.
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+
+    "declaration": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src", "test", "tsdown.config.ts", "oxlint.config.ts", "oxfmt.config.ts"]
+}

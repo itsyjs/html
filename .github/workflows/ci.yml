@@ -1,0 +1,22 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # pnpm (version from `packageManager`), Node, and the install, in one step.
+      # `runtime: node` means the current LTS; without it no Node is installed at all.
+      # No --frozen-lockfile flag: pnpm already refuses to update a lockfile when CI is set.
+      - uses: pnpm/setup@v2
+        with:
+          runtime: node
+          cache: true
+      # format, lint, both typechecks, build, publint, tests — the same gate as `preversion`
+      - run: pnpm check
+      - run: pnpm size
+      # Catches dead links and a docs build that no longer compiles.
+      - run: pnpm docs:build

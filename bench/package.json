@@ -1,0 +1,24 @@
+{
+  "name": "@itsy/html-bench",
+  "private": true,
+  "description": "Not published, not part of the package. Its own install so the root stays lean.",
+  "type": "module",
+  "scripts": {
+    "start": "node table.js",
+    "full": "node server.js",
+    "escape": "node escape.js",
+    "size": "node size.js"
+  },
+  "dependencies": {
+    "@itsy/html": "link:..",
+    "@lit-labs/ssr": "^4.1.0",
+    "ghtml": "^4.0.2",
+    "hono": "^4.13.8",
+    "htm": "^3.1.1",
+    "lit": "^3.3.3",
+    "mitata": "^1.0.34",
+    "preact": "^10.29.8",
+    "preact-render-to-string": "^6.7.0",
+    "uhtml": "^5.0.9"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  // The library typechecks without the DOM on purpose (see the root tsconfig).
+  // The playground component is browser-only, so the docs get their own.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "strict": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noEmit": true
+  },
+  // run.ts types against the library source, which reads the build-time `__DEV__`.
+  "include": [".vitepress/**/*.ts", ".vitepress/**/*.vue", "../src/globals.d.ts"]
+}
