@@ -54,26 +54,6 @@ All iterables flatten.
 html`<ul>${new Set(['a', 'b'])}</ul>`;
 ```
 
-## Values
-
-Strings are escaped, numbers print, `Html` is inserted as-is. Objects and Promises throw [code 7](/reference/errors#e7).
-
-```ts run
-html`<b>${'a < b'}</b> ${42n} ${html`<i>already html</i>`}`;
-```
-
-## Where a value can go
-
-Text and quoted attributes are escaped. URL attributes are also [scheme-checked](/security/url-guard). Inside a tag use `attrs()`; inside `<script>`, `<style>` or a comment use `raw()`. Unquoted values and `on*` attributes throw — see [Checks](/guide/checks).
-
-```ts run
-html`
-  <p title="${'"quoted"'}">${'<text>'}</p>
-  <a href="${'javascript:alert(1)'}">blocked</a>
-  <input ${attrs({ type: 'search' })}>
-  <script>${raw('let x = 1')}</script>`;
-```
-
 ## Attributes
 
 `attrs()` renders an object as attributes. `true` is a bare attribute, `false` and nullish are left out — except `aria-*`, `draggable`, `spellcheck` and `contenteditable`, which write `"true"` and `"false"` because both are meaningful.
@@ -105,7 +85,25 @@ const active = true;
 html`<a class="${cx('link', active && 'is-active')}">…</a>`;
 ```
 
-An object on any other key throws [code 2](/reference/errors#e2); `on*` throws [code 3](/reference/errors#e3).
+## Values
+
+Strings are escaped, numbers print, `Html` is inserted as-is. Objects and Promises throw [code 7](/reference/errors#e7).
+
+```ts run
+html`<b>${'a < b'}</b> ${42n} ${html`<i>already html</i>`}`;
+```
+
+## Where a value can go
+
+Text and quoted attributes are escaped. URL attributes are also [scheme-checked](/security/url-guard). Inside a tag use `attrs()`; inside `<script>`, `<style>` or a comment use `raw()`. Unquoted values and `on*` attributes throw — see [Checks](/guide/checks).
+
+```ts run
+html`
+  <p title="${'"quoted"'}">${'<text>'}</p>
+  <a href="${'javascript:alert(1)'}">blocked</a>
+  <input ${attrs({ type: 'search' })}>
+  <script>${raw('let x = 1')}</script>`;
+```
 
 ## Whitespace
 
