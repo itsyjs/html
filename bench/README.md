@@ -7,6 +7,7 @@ other renderers.
 ```sh
 pnpm bench       # from the repo root: the comparison table
 pnpm bench:full  # mitata's own output, with distributions and histograms
+pnpm bench:attrs # attrs() on its own, by attribute shape
 pnpm bench:size  # output bytes instead of time
 ```
 
@@ -17,6 +18,7 @@ source rather than whatever was in `dist` last. To run a single file from here:
 pnpm install --ignore-workspace
 node table.js   # two tables: relative speed, then time per render
 node server.js  # the same measurements, mitata's full output
+node attrs.js   # attrs() across the shapes that take different paths through it
 node escape.js  # the escaper on its own
 node size.js    # bytes emitted
 ```

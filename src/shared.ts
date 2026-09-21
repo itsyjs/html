@@ -144,16 +144,28 @@ export const safeUrl = (value: string, schemes: ReadonlySet<string>, enc = esc):
   return 'about:blank#blocked';
 };
 
+// The first letter of every URL_ATTRS name, one bit per letter: a d f h s x.
+// A prefilter only. A false positive costs a wasted lookup; a false negative would skip
+// the URL guard, so every URL_ATTRS entry must have its bit set here. Exported so the
+// test can assert that directly rather than guess at it from rendered output.
+/** @internal */
+export const URL_FIRST = 0x8400a9;
+
 /**
  * Escapes a value for the attribute it goes in: URL check for URL attributes, refusal for code attributes, plain escaping otherwise.
  *
- * @param enc `esc` for a string. For `Html`, which is checked but must not be escaped again, pass an identity.
- * @throws {HtmlError} code 3 for an `on*` attribute, whatever the value
+ * @throws {HtmlError} code 3 for an `on*` attribute
  * @internal
  */
-export const attrValue = (name: string, value: string, schemes: ReadonlySet<string>, enc = esc): string => {
-  const n = name.toLowerCase();
-  if (REFUSED.test(n))
+export const attrValue = (name: string, value: string, schemes: ReadonlySet<string>): string => {
+  // `| 32` lowercases an ASCII letter and nothing else; an empty name gives NaN | 32, which is 32.
+  // No character outside ASCII lowercases into one of these letters, so the gates below
+  // can reject without consulting toLowerCase().
+  const c = name.charCodeAt(0) | 32;
+  // REFUSED is anchored on `on`, so a name not starting with o or O cannot match it.
+  if (c === 111 && REFUSED.test(name))
     throw new HtmlError(3, __DEV__ && `refusing to interpolate into "${name}": it is code, not text`);
-  return URL_ATTRS.has(n) ? safeUrl(value, schemes, enc) : enc(value);
+  return ((URL_FIRST >>> (c - 97)) & 1) !== 0 && URL_ATTRS.has(name.toLowerCase())
+    ? safeUrl(value, schemes)
+    : esc(value);
 };

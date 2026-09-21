@@ -1,6 +1,7 @@
 import { suite, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { attrs, cx } from '#attrs';
+import { URL_ATTRS, URL_FIRST } from '#shared';
 
 const s = (x: unknown) => String(x);
 
@@ -82,6 +83,56 @@ suite('attrs', () => {
   test('errors carry a stable code', () => {
     assert.throws(() => attrs({ 'data-x': ['a'] }), { code: 2 });
     assert.throws(() => attrs({ onclick: 'x' }), { code: 3 });
+  });
+});
+
+// `attrValue` skips its lookups by testing one character, and a tri-state boolean skips
+// `attrValue` altogether. Each shortcut rests on a fact about the sets involved. If one of
+// those facts stops being true the shortcut becomes a hole, and nothing else would notice.
+suite('attrs fast paths', () => {
+  test('URL_FIRST has a bit for every URL attribute', () => {
+    // A false positive here only wastes a Set lookup. A false negative skips the URL guard.
+    for (const name of URL_ATTRS) {
+      const bit = (URL_FIRST >>> ((name.charCodeAt(0) | 32) - 97)) & 1;
+      assert.equal(bit, 1, `URL_FIRST has no bit for "${name}": the URL guard would be skipped`);
+    }
+  });
+  test('every URL attribute is still guarded, whatever its case', () => {
+    for (const name of URL_ATTRS) {
+      assert.equal(s(attrs({ [name]: 'javascript:x' })), `${name}="about:blank#blocked"`);
+      const upper = name.toUpperCase();
+      assert.equal(s(attrs({ [upper]: 'javascript:x' })), `${upper}="about:blank#blocked"`);
+    }
+  });
+  test('the on* refusal is anchored, so only a leading on counts', () => {
+    assert.throws(() => attrs({ onclick: 'x' }), { code: 3 });
+    assert.throws(() => attrs({ ONCLICK: 'x' }), { code: 3 });
+    assert.equal(s(attrs({ 'data-onclick': 'x' })), 'data-onclick="x"');
+    assert.equal(s(attrs({ on: 'x' })), 'on="x"'); // `on` alone is not `on[a-z]`
+  });
+  test('no tri attribute is a URL attribute or an event handler', () => {
+    // A tri boolean is written out without going through attrValue, so a tri name that was
+    // also a URL attribute or an on* handler would dodge both checks.
+    for (const name of ['aria-x', 'ARIA-Hidden', 'draggable', 'spellcheck', 'contenteditable']) {
+      assert.equal(s(attrs({ [name]: true })), `${name}="true"`);
+      assert.equal(s(attrs({ [name]: false })), `${name}="false"`);
+    }
+    for (const name of URL_ATTRS) assert.equal(s(attrs({ [name]: false })), ''); // not tri, so omitted
+  });
+  test('a name the character gate cannot judge falls back to the full lookup', () => {
+    // `charCodeAt(0) | 32` can say yes for a character that is not a letter at all; the Set
+    // still has the final word. An empty name gives NaN | 32, which is 32, and no bit.
+    assert.equal(s(attrs({ ärger: 'x' })), 'ärger="x"');
+    assert.equal(s(attrs({ '': 'x' })), '="x"');
+  });
+  test('quirks that must not drift', () => {
+    // The current behaviour, pinned so an optimisation cannot quietly change it. The first
+    // two disagree with AGENTS.md, which says code 3 fires for an on* attribute whatever the
+    // value: only a non-boolean reaches attrValue. That is a separate decision from speed.
+    assert.equal(s(attrs({ onclick: true })), 'onclick');
+    assert.equal(s(attrs({ onclick: false })), '');
+    assert.equal(s(attrs({ a: true, '': true })), 'a ');
+    assert.equal(s(attrs({ data: { href: 'javascript:x' } })), 'data-href="javascript:x"');
   });
 });
 

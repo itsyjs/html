@@ -91,6 +91,7 @@
     "size:check": "export-size .",
     "bench": "tsdown && pnpm --dir bench install --ignore-workspace && pnpm --dir bench start",
     "bench:full": "tsdown && pnpm --dir bench install --ignore-workspace && pnpm --dir bench full",
+    "bench:attrs": "tsdown && pnpm --dir bench install --ignore-workspace && pnpm --dir bench attrs",
     "bench:size": "tsdown && pnpm --dir bench install --ignore-workspace && pnpm --dir bench size",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
