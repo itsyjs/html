@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node table.js",
     "full": "node server.js",
+    "attrs": "node attrs.js",
     "escape": "node escape.js",
     "size": "node size.js"
   },

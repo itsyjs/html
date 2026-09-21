@@ -147,13 +147,12 @@ export const safeUrl = (value: string, schemes: ReadonlySet<string>, enc = esc):
 /**
  * Escapes a value for the attribute it goes in: URL check for URL attributes, refusal for code attributes, plain escaping otherwise.
  *
- * @param enc `esc` for a string. For `Html`, which is checked but must not be escaped again, pass an identity.
- * @throws {HtmlError} code 3 for an `on*` attribute, whatever the value
+ * @throws {HtmlError} code 3 for an `on*` attribute
  * @internal
  */
-export const attrValue = (name: string, value: string, schemes: ReadonlySet<string>, enc = esc): string => {
+export const attrValue = (name: string, value: string, schemes: ReadonlySet<string>): string => {
   const n = name.toLowerCase();
   if (REFUSED.test(n))
     throw new HtmlError(3, __DEV__ && `refusing to interpolate into "${name}": it is code, not text`);
-  return URL_ATTRS.has(n) ? safeUrl(value, schemes, enc) : enc(value);
+  return URL_ATTRS.has(n) ? safeUrl(value, schemes) : esc(value);
 };

@@ -75,12 +75,12 @@ Minified and brotli-compressed, with the listed imports and nothing else.
 
 | import              |                            | production  | development |
 | ------------------- | -------------------------- | ----------- | ----------- |
-| `@itsy/html`        | `html`, `attrs`, `raw`     | **1.61 kB** | 3.92 kB     |
-| `@itsy/html/attrs`  | `attrs`, `cx`              | **797 B**   | —           |
+| `@itsy/html`        | `html`, `attrs`, `raw`     | **1.62 kB** | 3.95 kB     |
+| `@itsy/html/attrs`  | `attrs`, `cx`              | **818 B**   | —           |
 | `@itsy/html/check`  | `check`                    | **17 B**    | 2.26 kB     |
 | `@itsy/html/a11y`   | `a11y`, `without`          | **29 B**    | 2.15 kB     |
-| `@itsy/html/frame`  | `frame`, `head`, `element` | **2.43 kB** | 4.72 kB     |
-| `@itsy/html/util`   | all seven helpers          | **1.05 kB** | —           |
+| `@itsy/html/frame`  | `frame`, `head`, `element` | **2.44 kB** | 4.75 kB     |
+| `@itsy/html/util`   | all seven helpers          | **1.07 kB** | —           |
 | `@itsy/html/create` | `createHtml`               | **1.66 kB** | —           |
 
 [The import map][imports] has every entry point and what each one exports.

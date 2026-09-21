@@ -55,6 +55,38 @@ const style = (v: StyleValue): string => {
   return out;
 };
 
+/*
+ * Renders one attribute onto `out` and returns the new `out`. Called again for each key of an `aria` or `data` group.
+ *
+ * At module scope to avoid creating a fresh allocation on every call of `createAttrs`.
+ */
+const one = (out: string, name: string, v: AttrValue, schemes: ReadonlySet<string>): string => {
+  if (v == null) return out;
+  // `tri` can only change the answer for a boolean, so nothing else pays for the regex.
+  if (typeof v === 'boolean') {
+    const tri = TRI.test(name); // must "false" be written out for this attribute?
+    if (v === false && !tri) return out;
+    out += out ? ' ' : '';
+    if (!tri) return out + name; // a bare attribute, like `disabled`
+    // A tri attribute's value is the word `true` or `false`: nothing to escape, and a
+    // name matching TRI is never an `on*` handler and never holds a URL, so the checks
+    // in attrValue have nothing to do here.
+    return `${out}${name}="${v}"`;
+  }
+  let s: string;
+  if (typeof v === 'object') {
+    if (name === 'class') s = cx(v as ClassValue);
+    else if (name === 'style' && !Array.isArray(v)) s = style(v as StyleValue);
+    else if ((name === 'aria' || name === 'data') && !Array.isArray(v)) {
+      // A group: each key becomes its own attribute, like aria-expanded.
+      for (const k in v) out = one(out, `${name}-${k}`, (v as AttrGroup)[k], schemes);
+      return out;
+    } else throw new HtmlError(2, __DEV__ && `attribute "${name}" takes a string, number or boolean`);
+  } else s = String(v);
+  out += out ? ' ' : '';
+  return `${out}${name}="${attrValue(name, s, schemes)}"`;
+};
+
 /**
  * Makes an `attrs()` that checks URLs against `schemes`. The root `attrs` uses the defaults; `@itsy/html/create` makes its own.
  * @internal
@@ -63,26 +95,7 @@ export const createAttrs =
   (schemes: ReadonlySet<string>) =>
   (attributes: Record<string, AttrValue>): Html => {
     let out = '';
-    // Renders one attribute onto `out`. Called again for each key of an `aria` or `data` group.
-    const one = (name: string, v: AttrValue): void => {
-      if (v == null) return;
-      const tri = TRI.test(name); // must "false" be written out for this attribute?
-      if (v === false && !tri) return;
-      let s: string;
-      if (typeof v === 'object') {
-        if (name === 'class') s = cx(v as ClassValue);
-        else if (name === 'style' && !Array.isArray(v)) s = style(v as StyleValue);
-        else if ((name === 'aria' || name === 'data') && !Array.isArray(v)) {
-          // A group: each key becomes its own attribute, like aria-expanded.
-          for (const k in v) one(`${name}-${k}`, (v as AttrGroup)[k]);
-          return;
-        } else throw new HtmlError(2, __DEV__ && `attribute "${name}" takes a string, number or boolean`);
-      } else s = String(v);
-      out += out ? ' ' : '';
-      if (v === true && !tri) out += name; // a bare attribute, like `disabled`
-      else out += `${name}="${attrValue(name, s, schemes)}"`;
-    };
-    for (const name in attributes) one(name, attributes[name]);
+    for (const name in attributes) out = one(out, name, attributes[name], schemes);
     return raw(out);
   };
 
@@ -99,7 +112,7 @@ export const createAttrs =
  * ```
  *
  * @throws {HtmlError} code 2 for an object in an attribute other than `class`, `style`, `aria` or `data`
- * @throws {HtmlError} code 3 for an `on*` attribute, whatever the value
+ * @throws {HtmlError} code 3 for an `on*` attribute
  * @see {@link AttrValue} for how booleans and objects render
  */
 export const attrs = createAttrs(SCHEMES);
