@@ -358,6 +358,23 @@ suite('rule sets compose', () => {
   });
 });
 
+suite('check(): options a JavaScript caller can send', () => {
+  // `null` is outside the types, so it cannot be a type error, and it must not be a throw either.
+  // It reads as `false` wherever it lands: the accessibility rules off, no rules of your own, the
+  // id checks off.
+  const nul = null as unknown as undefined;
+  const page = '<img src="a"><label for="x">y</label>';
+  const tags = (r: ReturnType<typeof check>) => r.map((p) => ('rule' in p ? p.rule : p.code));
+  test('null reads as false, and never throws', () => {
+    assert.deepEqual(tags(check(page)), ['img-alt', 15]);
+    assert.deepEqual(tags(check(page, nul)), ['img-alt', 15]);
+    assert.deepEqual(tags(check(page, { a11y: nul })), [15]);
+    assert.deepEqual(tags(check(page, { a11y: { without: nul } })), ['img-alt', 15]);
+    assert.deepEqual(tags(check(page, { rules: nul })), ['img-alt', 15]);
+    assert.deepEqual(tags(check(page, { ids: nul })), ['img-alt']);
+  });
+});
+
 suite('check.enabled', () => {
   test('is true wherever the checks actually run', () => {
     // The production build sets it false; test/built/output.test.ts asserts that against dist/.

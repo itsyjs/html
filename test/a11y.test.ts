@@ -307,9 +307,6 @@ suite('turning rules off', () => {
   test('an empty a11y object is just a11y', () => {
     assert.deepEqual(names(check(page, { a11y: {} })), names(check(page)));
   });
-  test('a JavaScript caller passing null turns them off rather than throwing', () => {
-    assert.deepEqual(names(check(page, { a11y: null as unknown as false })), ['code 9']);
-  });
 });
 
 // The role rules. As above, the clean cases are the point: these read a hand-written table, so a
@@ -333,6 +330,9 @@ suite('role rules', () => {
     assert.deepEqual(found('<div role="switch button" aria-checked="true">x</div>'), []);
     assert.deepEqual(found('<div role="doc-abstract">x</div>'), []); // DPUB-ARIA
     assert.deepEqual(found('<div role="graphics-document">x</div>'), []); // Graphics ARIA
+    // Never ARIA's, but WebKit reads it, for VoiceOver: not ignored, so not reported.
+    assert.deepEqual(found('<span role="text">a<br>b</span>'), []);
+    assert.deepEqual(found('<span role="nonsense text">x</span>'), []);
     assert.deepEqual(found('<div role="nonsense alsononsense">x</div>'), ['role-unknown']);
   });
   test('role rules: a role from another vocabulary ends the check wherever it sits', () => {
@@ -371,6 +371,23 @@ suite('role rules', () => {
     assert.deepEqual(found('<ol role="list"><li>x</li></ol>'), []);
     assert.deepEqual(found('<menu role="list"><li>x</li></menu>'), []);
   });
+  test('role-redundant: a table may restate its roles', () => {
+    // A responsive table changes `display` on these, and Chrome and Safari have both dropped the
+    // table roles when it does. Restating them is the documented fix, so none of them is redundant.
+    assert.deepEqual(
+      found('<table role="table"><tbody role="rowgroup"><tr role="row"><td role="cell">x</td></tr></tbody></table>'),
+      [],
+    );
+    assert.deepEqual(
+      found(
+        '<table><thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">x</th></tr></thead></table>',
+      ),
+      [],
+    );
+    assert.deepEqual(found('<table><tfoot role="rowgroup"><tr><td>x</td></tr></tfoot></table>'), []);
+    // The rest of the role check still applies to them.
+    assert.deepEqual(found('<table role="tabel"><tbody><tr><td>x</td></tr></tbody></table>'), ['role-unknown']);
+  });
   test('role-redundant: a <select> settles its own role from multiple and size', () => {
     // Without this, role="combobox" here reports a missing aria-expanded the element provides
     // itself. The markup settles which it is, so both directions are checked.
@@ -387,6 +404,9 @@ suite('role rules', () => {
     assert.deepEqual(found('<div role="slider" aria-valuenow="3" aria-label="x">y</div>'), []);
     assert.deepEqual(found('<div role="heading">x</div>'), ['role-required-props']);
     assert.deepEqual(found('<div role="heading" aria-level="2">x</div>'), []);
+    assert.deepEqual(found('<div role="meter" aria-label="Disk">x</div>'), ['role-required-props']);
+    assert.deepEqual(found('<div role="meter" aria-valuenow="7" aria-label="Disk">x</div>'), []);
+    assert.deepEqual(found('<meter role="meter">7</meter>'), ['role-redundant']); // has a value of its own
     // ARIA asks a spinbutton for aria-valuenow only once it has a value.
     assert.deepEqual(found('<div role="spinbutton" aria-label="Quantity" tabindex="0"></div>'), []);
   });
@@ -401,6 +421,15 @@ suite('role rules', () => {
     assert.deepEqual(found('<input type="checkbox" role="menuitemcheckbox">'), []);
     assert.deepEqual(found('<input type="radio" role="menuitemradio">'), []);
     assert.deepEqual(found('<input type="range" role="scrollbar">'), []);
+    // A text input with a `list` is a combobox already, and shows its own suggestions.
+    assert.deepEqual(found('<input list="c" role="combobox" aria-label="City"><datalist id="c"></datalist>'), []);
+    assert.deepEqual(
+      found('<input type="search" list="c" role="combobox" aria-label="City"><datalist id="c"></datalist>'),
+      [],
+    );
+    assert.deepEqual(found('<input type="checkbox" list="c" role="switch"><datalist id="c"></datalist>'), []);
+    // Without one, this is the ARIA 1.2 combobox, which owes its aria-expanded.
+    assert.deepEqual(found('<input type="text" role="combobox" aria-label="City">'), ['role-required-props']);
     // Elements with no such state of their own still owe it.
     assert.deepEqual(found('<button role="switch">x</button>'), ['role-required-props']);
     assert.deepEqual(found('<input role="switch">'), ['role-required-props']);
@@ -415,6 +444,7 @@ suite('role rules', () => {
     assert.deepEqual(found('<div role="presentation">x</div>'), []);
     assert.deepEqual(found('<button disabled role="presentation">x</button>'), []);
     assert.deepEqual(found('<a role="none" id="x">y</a>'), []); // no href, so not a link and not focusable
+    assert.deepEqual(found('<input type="HIDDEN" role="presentation">'), []); // the type reads case-insensitively
   });
   test('role rules stay out of hidden subtrees, like every other rule', () => {
     assert.deepEqual(found('<div hidden><div role="buton">x</div></div>'), []);

@@ -184,12 +184,16 @@ cannot be sure:
 - The role tables hold only the mappings the markup settles on its own. `<header role="banner">`,
   `<aside role="complementary">` and `<li role="listitem">` depend on an ancestor, so none of them
   is reported as redundant.
-- `<ul role="list">` is not reported either. Safari drops the list role from a list styled
-  `list-style: none`, and restating it is how you put it back.
+- Nor is `<ul role="list">`, or `role="table"`, `role="rowgroup"` and `role="row"` on the table
+  elements that already have them. Safari drops the list role from a list styled
+  `list-style: none`, browsers have dropped the table roles from a table given another `display`,
+  and restating the role is how you put it back.
 - An `<input>` keeps its own state whatever role it is given. `<input type="checkbox" role="switch">`
-  is the native switch, and needs no `aria-checked` — ARIA in HTML forbids one.
+  is the native switch, and needs no `aria-checked` — ARIA in HTML forbids one. A text input with
+  a `list` is a combobox already, and needs no `aria-expanded`.
 - `role` takes a fallback list, and the browser uses the first entry it knows. A role from another
-  vocabulary, such as DPUB-ARIA's `doc-*`, may be that entry, so the role rules stop at one.
+  vocabulary, such as DPUB-ARIA's `doc-*`, or WebKit's `role="text"`, may be that entry, so the
+  role rules stop at one.
 - The rules that need the full role-to-properties graph — which `aria-*` each role allows — are
   left out. That table is the largest and the easiest one to be wrong with.
 

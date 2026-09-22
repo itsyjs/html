@@ -128,17 +128,20 @@ interface Check {
 export const check = ((markup: string | Html, options?: CheckOptions) => {
   const found: (Problem | Finding)[] = [];
   if (__DEV__) {
-    const { ids = true, a11y = true, rules = [] } = options ?? {};
+    // What is left out takes its default. A `null` from JavaScript is outside the types, and reads
+    // as `false` wherever it lands: rules off, no rules of your own, id checks off. Never a throw.
+    const { ids = true, a11y = true, rules } = options ?? {};
     // The built-in rules run first, so when they and a project's report from the same hook at the
     // same offset, theirs reads first.
     const sets: RuleSet[] = [];
-    if (a11y) sets.push(a11yRules(a11y === true ? [] : a11y.without));
-    sets.push(...(typeof rules === 'function' ? [rules] : rules));
+    if (a11y) sets.push(a11yRules(a11y === true ? undefined : a11y.without));
+    if (typeof rules === 'function') sets.push(rules);
+    else if (rules) sets.push(...rules);
     // One walk whatever the count: a single set is driven directly, several through `compose`.
     audit([String(markup)], (p) => found.push(p), { ids }, sets.length > 1 ? compose(sets) : sets[0]);
     found.sort((a, b) => a.at - b.at); // a rule reports as the audit walks; this puts everything in page order
   }
-  return found as Problem[];
+  return found;
 }) as Check;
 
 // Written as a plain assignment so the production build folds it to `check.enabled = false`. The
