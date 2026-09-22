@@ -13,7 +13,7 @@ import type { Finding, Problem } from '#check';
 // Every runtime export of every public entry, as one flat scope. A dynamic
 // import with a variable keeps Vite's config bundler from inlining these, so
 // Node resolves the subpaths itself.
-const ENTRIES = ['#index', '#attrs', '#util', '#frame', '#check', '#a11y', '#create'];
+const ENTRIES = ['#index', '#attrs', '#util', '#frame', '#check', '#create'];
 const scope: Record<string, unknown> = {};
 for (const entry of ENTRIES) Object.assign(scope, await import(/* @vite-ignore */ entry));
 

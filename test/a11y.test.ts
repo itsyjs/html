@@ -1,12 +1,11 @@
 import { suite, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { check } from '#check';
-import { a11y, without } from '#a11y';
 
 // Every case here came out of an adversarial review of the rule it sits under: the clean ones are
 // the near-misses that a sloppy implementation fires on, and they are the point of the file.
 const found = (markup: string) =>
-  check(markup, { a11y })
+  check(markup)
     .flatMap((p) => ('rule' in p ? [p.rule] : []))
     .sort();
 
@@ -280,18 +279,118 @@ suite('a11y rules: regressions', () => {
 suite('turning rules off', () => {
   const page = '<img src="hero.jpg"><img src="a.jpg" alt="photo-3.png"><button></button><div>';
   const names = (r: ReturnType<typeof check>) => r.map((p) => ('rule' in p ? p.rule : `code ${p.code}`));
-  test('without() silences the named rules and nothing else', () => {
-    assert.deepEqual(names(check(page, { a11y })), ['img-alt', 'img-alt-filename', 'empty-button', 'code 9']);
-    assert.deepEqual(names(check(page, { a11y: without('img-alt-filename') })), ['img-alt', 'empty-button', 'code 9']);
-    assert.deepEqual(names(check(page, { a11y: without('img-alt-filename', 'empty-button') })), ['img-alt', 'code 9']);
+  test('without silences the named rules and nothing else', () => {
+    assert.deepEqual(names(check(page)), ['img-alt', 'img-alt-filename', 'empty-button', 'code 9']);
+    assert.deepEqual(names(check(page, { a11y: { without: ['img-alt-filename'] } })), [
+      'img-alt',
+      'empty-button',
+      'code 9',
+    ]);
+    assert.deepEqual(names(check(page, { a11y: { without: ['img-alt-filename', 'empty-button'] } })), [
+      'img-alt',
+      'code 9',
+    ]);
   });
   test('naming a rule that never fires changes nothing', () => {
-    assert.deepEqual(names(check(page, { a11y: without('misplaced-scope') })), names(check(page, { a11y })));
+    assert.deepEqual(names(check(page, { a11y: { without: ['misplaced-scope'] } })), names(check(page)));
   });
-  test('without() cannot silence a markup problem', () => {
-    assert.deepEqual(names(check(page, { a11y: without('img-alt', 'img-alt-filename', 'empty-button') })), ['code 9']);
+  test('without cannot silence a markup problem', () => {
+    assert.deepEqual(names(check(page, { a11y: { without: ['img-alt', 'img-alt-filename', 'empty-button'] } })), [
+      'code 9',
+    ]);
   });
-  test('without() with no arguments is just a11y', () => {
-    assert.deepEqual(names(check(page, { a11y: without() })), names(check(page, { a11y })));
+  test('an empty a11y object is just a11y', () => {
+    assert.deepEqual(names(check(page, { a11y: {} })), names(check(page)));
+  });
+});
+
+// The role rules. As above, the clean cases are the point: these read a hand-written table, so a
+// missing entry shows up as a finding on correct markup rather than as a miss.
+suite('role rules', () => {
+  test('role-unknown: a role no browser knows', () => {
+    assert.deepEqual(found('<div role="buton">x</div>'), ['role-unknown']);
+    assert.deepEqual(found('<div role="">x</div>'), ['aria-empty']); // its own rule, not this one
+    assert.deepEqual(found('<div role="button" aria-label="x">x</div>'), []);
+    assert.deepEqual(found('<div role="BUTTON" aria-label="x">x</div>'), []); // roles are case-insensitive
+    assert.deepEqual(found('<div role="  button  " aria-label="x">x</div>'), []);
+  });
+  test('role-unknown: a fallback list is deliberate, and other vocabularies are not ours', () => {
+    // The browser takes the first role it knows, so a list with a real role in it is fine.
+    assert.deepEqual(found('<div role="switch button" aria-checked="true">x</div>'), []);
+    assert.deepEqual(found('<div role="doc-abstract">x</div>'), []); // DPUB-ARIA
+    assert.deepEqual(found('<div role="graphics-document">x</div>'), []); // Graphics ARIA
+    assert.deepEqual(found('<div role="nonsense alsononsense">x</div>'), ['role-unknown']);
+  });
+  test('role-redundant: the element already had that role', () => {
+    assert.deepEqual(found('<nav role="navigation">x</nav>'), ['role-redundant']);
+    assert.deepEqual(found('<ul role="list"><li>x</li></ul>'), ['role-redundant']);
+    assert.deepEqual(found('<h2 role="heading">x</h2>'), ['role-redundant']);
+    assert.deepEqual(found('<a href="/x" role="link">y</a>'), ['role-redundant']);
+    assert.deepEqual(found('<input type="checkbox" role="checkbox">'), ['role-redundant']);
+    // Changing an element's role is the whole point of the attribute.
+    assert.deepEqual(found('<ul role="tablist"><li role="tab">x</li></ul>'), []);
+    assert.deepEqual(found('<a role="button" href="/x">y</a>'), []);
+  });
+  test('role-redundant: stays silent where the role depends on context', () => {
+    // <header>, <footer>, <section>, <li>, <td> and <select> all depend on an ancestor or on
+    // another attribute, so none of them are in the table and none of them report.
+    assert.deepEqual(found('<header role="banner">x</header>'), []);
+    assert.deepEqual(found('<footer role="contentinfo">x</footer>'), []);
+    assert.deepEqual(found('<section role="region" aria-label="x">y</section>'), []);
+    assert.deepEqual(found('<a role="link">y</a>'), []); // no href, so no implicit link to be redundant with
+    assert.deepEqual(found('<input type="text" role="textbox">'), []);
+  });
+  test('role-redundant: a <select> settles its own role from multiple and size', () => {
+    // Without this, role="combobox" here reports a missing aria-expanded the element provides
+    // itself. The markup settles which it is, so both directions are checked.
+    assert.deepEqual(found('<select role="combobox"><option>a</option></select>'), ['role-redundant']);
+    assert.deepEqual(found('<select multiple role="listbox"><option>a</option></select>'), ['role-redundant']);
+    assert.deepEqual(found('<select size="4" role="listbox"><option>a</option></select>'), ['role-redundant']);
+    assert.deepEqual(found('<select size="1" role="listbox"><option>a</option></select>'), []);
+    assert.deepEqual(found('<select role="listbox"><option>a</option></select>'), []);
+  });
+  test('role-required-props: a role with no state to read', () => {
+    assert.deepEqual(found('<div role="checkbox" aria-label="x">y</div>'), ['role-required-props']);
+    assert.deepEqual(found('<div role="checkbox" aria-checked="false" aria-label="x">y</div>'), []);
+    assert.deepEqual(found('<div role="slider" aria-label="x">y</div>'), ['role-required-props']);
+    assert.deepEqual(found('<div role="slider" aria-valuenow="3" aria-label="x">y</div>'), []);
+    assert.deepEqual(found('<div role="heading">x</div>'), ['role-required-props']);
+    assert.deepEqual(found('<div role="heading" aria-level="2">x</div>'), []);
+  });
+  test('role-required-props: not where the element brings the state itself', () => {
+    // <input type=checkbox> reports its own checked state, so the role adds nothing and the
+    // missing aria-checked is not a problem. That is role-redundant's business, not this rule's.
+    assert.deepEqual(found('<input type="checkbox" role="checkbox">'), ['role-redundant']);
+    assert.deepEqual(found('<input type="range" role="slider">'), ['role-redundant']);
+    assert.deepEqual(found('<div role="button" aria-label="x">y</div>'), []); // needs no state
+  });
+  test('role-presentation-interactive: a presentational role the keyboard still reaches', () => {
+    assert.deepEqual(found('<button role="presentation">x</button>'), ['role-presentation-interactive']);
+    assert.deepEqual(found('<a href="/x" role="none">y</a>'), ['role-presentation-interactive']);
+    assert.deepEqual(found('<div tabindex="0" role="presentation">x</div>'), ['role-presentation-interactive']);
+    // Not focusable, so the role is honoured and there is nothing to report.
+    assert.deepEqual(found('<img src="c.jpg" role="presentation">'), []);
+    assert.deepEqual(found('<div role="presentation">x</div>'), []);
+    assert.deepEqual(found('<button disabled role="presentation">x</button>'), []);
+    assert.deepEqual(found('<a role="none" id="x">y</a>'), []); // no href, so not a link and not focusable
+  });
+  test('role rules stay out of hidden subtrees, like every other rule', () => {
+    assert.deepEqual(found('<div hidden><div role="buton">x</div></div>'), []);
+    assert.deepEqual(found('<div aria-hidden="true"><nav role="navigation">x</nav></div>'), []);
+  });
+});
+
+suite('ordinary markup keeps quiet', () => {
+  test('a realistic page reports nothing', () => {
+    const page =
+      '<!doctype html><html lang="en"><head><title>Shop</title></head><body>' +
+      '<header><nav aria-label="Main"><ul><li><a href="/">Home</a></li></ul></nav></header>' +
+      '<main><h1>Boots</h1><img src="boot.jpg" alt="A leather boot">' +
+      '<form><label for="q">Search</label><input id="q" type="search">' +
+      '<button type="submit">Go</button></form>' +
+      '<div role="tablist"><button role="tab" aria-selected="true" aria-controls="p">One</button></div>' +
+      '<div role="tabpanel" id="p">x</div>' +
+      '</main><footer><p>&copy; 2026</p></footer></body></html>';
+    assert.deepEqual(check(page), []);
   });
 });

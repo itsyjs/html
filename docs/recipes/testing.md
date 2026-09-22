@@ -28,13 +28,16 @@ test('the page is well formed', () => {
 ```
 
 That one line covers unclosed tags, mismatched end tags, nesting a browser would rewrite, duplicate
-attributes, duplicate ids, id references pointing nowhere, and any URL the guard blocked. Run it
-over the page rather than a fragment — the ids and references are only visible at page level.
+attributes, duplicate ids, id references pointing nowhere, any URL the guard blocked, and the
+[accessibility rules](/api/check#accessibility). Run it over the page rather than a fragment — the
+ids, the references and most of the accessibility rules are only visible at page level.
+
+Pass `{ a11y: false }` for the markup check on its own.
 
 When it fails, the array says where:
 
 ```ts
-for (const p of check(Page(data))) console.log(p.code, p.message, p.near);
+for (const p of check(Page(data))) console.log('rule' in p ? p.rule : p.code, p.message, p.near);
 ```
 
 ## Make sure you are on the dev build
@@ -48,13 +51,11 @@ Run tests with the condition set:
 node --conditions=development --test test/*.test.ts
 ```
 
-And if you want to be certain the suite cannot pass vacuously, assert that a known-bad string is
-caught:
+And to be certain the suite cannot pass vacuously, assert that the checks are on. `check.enabled`
+is `false` on the production build:
 
 ```ts
-test('the markup check is active', () => {
-  assert.notDeepEqual(check('<div>'), []); // fails on the production build
-});
+test('the checks are active', () => assert(check.enabled));
 ```
 
 ::: tip
@@ -72,7 +73,7 @@ looking.
 export const decorators = [
   (story) => {
     const markup = String(story());
-    for (const p of check(markup)) console.warn(`[html ${p.code}] ${p.message}`, p.near);
+    for (const p of check(markup)) console.warn(`[${'rule' in p ? p.rule : `html ${p.code}`}] ${p.message}`, p.near);
     return markup;
   },
 ];

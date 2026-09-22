@@ -12,7 +12,6 @@ export default defineConfig([
     entry: {
       index: 'src/index.ts',
       attrs: 'src/attrs.ts',
-      a11y: 'src/a11y.ts',
       check: 'src/check.ts',
       frame: 'src/frame.ts',
       util: 'src/util.ts',
@@ -36,7 +35,6 @@ export default defineConfig([
     entry: {
       'index.dev': 'src/index.ts',
       'attrs.dev': 'src/attrs.ts',
-      'a11y.dev': 'src/a11y.ts',
       'check.dev': 'src/check.ts',
       'frame.dev': 'src/frame.ts',
       'util.dev': 'src/util.ts',

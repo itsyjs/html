@@ -36,8 +36,8 @@ and still runs.
 
 This one reads the static markup around each value, works out which context the value landed in,
 and applies what that context needs. Where no escaping would make a context safe — inside a tag,
-inside `<script>`, in any `on*` attribute — it throws instead of guessing. The result is a `String`
-subclass, so a template nested in another is not escaped twice, and the same function renders on a
+inside `<script>`, in any `on*` attribute — it throws instead of guessing. The result is an `Html`
+wrapper, so a template nested in another is not escaped twice, and the same function renders on a
 server and in a browser.
 
 ## What you get
@@ -53,10 +53,15 @@ server and in a browser.
 - **[`frame()`][frame]** — a whole document, with a head that merges so a page can override one
   entry of a shared layout without reordering the rest.
 - **[`check()`][check]** — the same checks over a rendered page, plus duplicate ids, id references
-  pointing nowhere, and any URL the guard blocked. 17 bytes in production.
-- **[`a11y`][a11y]** — nineteen accessibility rules for `check()`, in the same pass and the same
-  list: the unlabelled icon button, the misspelled `aria-` attribute, the image with no `alt`.
-  `without()` turns any of them off, with the names type-checked. 29 bytes in production.
+  pointing nowhere, and any URL the guard blocked. 28 bytes in production.
+- **[Twenty-three accessibility rules][a11y]**, running inside `check()` by default, in the same
+  pass and the same list: the unlabelled icon button, the misspelled `aria-` attribute, the image
+  with no `alt`, the role that does not exist. `{ a11y: { without: [...] } }` turns any of them
+  off, with the names type-checked. They cost nothing — the production build compiles them away
+  with the rest of `check()`.
+- **[Your own rules][check]** — `check(page, { rules })` runs a project's rules in that same pass,
+  so house style and design-system constraints report like everything else, and ship like
+  everything else: not at all.
 
 ## Before you start
 
@@ -75,13 +80,12 @@ Minified and brotli-compressed, with the listed imports and nothing else.
 
 | import              |                            | production  | development |
 | ------------------- | -------------------------- | ----------- | ----------- |
-| `@itsy/html`        | `html`, `attrs`, `raw`     | **1.72 kB** | 4.11 kB     |
-| `@itsy/html/attrs`  | `attrs`, `cx`              | **910 B**   | —           |
-| `@itsy/html/check`  | `check`                    | **17 B**    | 2.26 kB     |
-| `@itsy/html/a11y`   | `a11y`, `without`          | **29 B**    | 2.15 kB     |
-| `@itsy/html/frame`  | `frame`, `head`, `element` | **2.53 kB** | 4.93 kB     |
-| `@itsy/html/util`   | all seven helpers          | **1.16 kB** | —           |
-| `@itsy/html/create` | `createHtml`               | **1.76 kB** | —           |
+| `@itsy/html`        | `html`, `attrs`, `raw`     | **1.73 kB** | 4.14 kB     |
+| `@itsy/html/attrs`  | `attrs`, `cx`              | **929 B**   | —           |
+| `@itsy/html/check`  | `check`                    | **28 B**    | 5.33 kB     |
+| `@itsy/html/frame`  | `frame`, `head`, `element` | **2.54 kB** | 4.93 kB     |
+| `@itsy/html/util`   | all seven helpers          | **1.18 kB** | —           |
+| `@itsy/html/create` | `createHtml`               | **1.77 kB** | —           |
 
 [The import map][imports] has every entry point and what each one exports.
 
@@ -104,7 +108,7 @@ MIT
 [frame]: https://itsyjs.github.io/html/guide/documents
 [url-guard]: https://itsyjs.github.io/html/security/url-guard
 [check]: https://itsyjs.github.io/html/api/check
-[a11y]: https://itsyjs.github.io/html/api/a11y
+[a11y]: https://itsyjs.github.io/html/api/check#accessibility
 [errors]: https://itsyjs.github.io/html/reference/errors
 [imports]: https://itsyjs.github.io/html/reference/imports
 [llms]: https://itsyjs.github.io/html/llms.txt

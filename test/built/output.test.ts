@@ -63,7 +63,7 @@ suite('built output', () => {
     const dev = await loadCheck('check.dev.js');
     assert.deepEqual(prod.check('<div>'), []);
     assert.deepEqual(
-      dev.check('<div>').map((p) => p.code),
+      dev.check('<div>', { a11y: false }).map((p) => p.code),
       [9],
     );
   });
@@ -112,8 +112,40 @@ suite('built output', () => {
       'closes nothing',
       'bad tag name',
       'the URL guard blocked',
+      // The accessibility rules moved inside check() — these are the strings that would show up
+      // if they came with it. This is the assertion that keeps the merge honest.
+      'aria-labelledby',
+      'screen reader',
+      'menuitemcheckbox',
+      'is not an ARIA role',
     ]) {
       assert.ok(!src.includes(word), `prod bundle contains "${word}"`);
+    }
+  });
+  test('check() is inert in prod and says so', async () => {
+    const prod = await loadCheck('check.js');
+    const dev = await loadCheck('check.dev.js');
+    assert.equal(prod.check.enabled, false);
+    assert.equal(dev.check.enabled, true);
+    // The hazard `enabled` exists for: a suite resolving prod passes every assertion below.
+    assert.deepEqual(prod.check('<img src="a"><div>'), []);
+    assert.deepEqual(
+      dev.check('<img src="a"><div>').map((p) => ('rule' in p ? p.rule : p.code)),
+      ['img-alt', 9],
+    );
+  });
+  test('the accessibility rules run by default, and turn off by name', async () => {
+    const dev = await loadCheck('check.dev.js');
+    assert.deepEqual(
+      dev.check('<img src="a">').map((p) => ('rule' in p ? p.rule : p.code)),
+      ['img-alt'],
+    );
+    assert.deepEqual(dev.check('<img src="a">', { a11y: false }), []);
+    assert.deepEqual(dev.check('<img src="a">', { a11y: { without: ['img-alt'] } }), []);
+  });
+  test('a11y is no longer a separate entry point', () => {
+    for (const f of ['a11y.js', 'a11y.dev.js']) {
+      assert.ok(!existsSync(new URL(f, dist)), `dist/${f} should be gone`);
     }
   });
 });

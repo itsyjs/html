@@ -2,12 +2,12 @@
 
 This page details how to use checks that are included for accessibility, security, and avoiding typos that would cause unintended HTML.
 
-| check                        | fires                                               | build                                | setup                             |
-| ---------------------------- | --------------------------------------------------- | ------------------------------------ | --------------------------------- |
-| renderer refusals, codes 2-7 | first render of a template, throws `HtmlError`      | both                                 | none                              |
-| markup check, codes 8–14     | first render of a template, throws `HtmlError`      | development only                     | resolve the development build     |
-| `check()`, codes 8–16 and 19 | when called on a rendered page, returns `Problem[]` | development only, `[]` in production | `@itsy/html/check`                |
-| accessibility rules          | inside `check()`, returns `Finding[]` by rule name  | development only                     | `{ a11y }` from `@itsy/html/a11y` |
+| check                        | fires                                               | build                                | setup                         |
+| ---------------------------- | --------------------------------------------------- | ------------------------------------ | ----------------------------- |
+| renderer refusals, codes 2-7 | first render of a template, throws `HtmlError`      | both                                 | none                          |
+| markup check, codes 8–14     | first render of a template, throws `HtmlError`      | development only                     | resolve the development build |
+| `check()`, codes 8–16 and 19 | when called on a rendered page, returns `Problem[]` | development only, `[]` in production | `@itsy/html/check`            |
+| accessibility rules          | inside `check()`, returns `Finding[]` by rule name  | development only, on by default      | none                          |
 
 `HtmlError.code` is the same in both builds; production's message is `E` plus the code. Bundlers pick the development build with the `development` condition — [bundlers and editors](/recipes/tooling).
 
@@ -39,20 +39,37 @@ Pass `{ ids: false }` when the markup is a partial-fragment, e.g. a `for` or `ar
 
 ## Accessibility
 
-Advice, not errors: a `Finding` carries a rule name instead of a code, and an empty list means these rules found nothing, not that the page is accessible. [The rules](/api/a11y#the-rules).
+Advice, not errors, and on by default: a `Finding` carries a rule name instead of a code, and an
+empty list means these rules found nothing, not that the page is accessible.
+[The rules](/api/check#accessibility).
 
 ```ts run
-check('<img src="cat.jpg"><button><svg></svg></button><a href="/skip" aria-hidden="true">Skip</a>', { a11y });
+check('<img src="cat.jpg"><button><svg></svg></button><a href="/skip" aria-hidden="true">Skip</a>');
 ```
 
 Quiet when unsure: `alt=""`, `role="presentation"`, `hidden` and custom elements all silence the rule around them.
 
 ```ts run
-check('<img src="c.jpg" alt=""><div hidden><button></button></div><label>Email <my-input></my-input></label>', { a11y });
+check('<img src="c.jpg" alt=""><div hidden><button></button></div><label>Email <my-input></my-input></label>');
 ```
 
-`without()` turns a rule off for a whole codebase. The names are typed, so a typo is a type error.
+`a11y: { without: [...] }` turns a rule off for a whole codebase, and `a11y: false` turns the lot
+off. The names are typed, so a typo is a type error.
 
 ```ts run
-check('<img src="photo-3.png" alt="photo-3.png">', { a11y: without('img-alt-filename') });
+check('<img src="photo-3.png" alt="photo-3.png">', { a11y: { without: ['img-alt-filename'] } });
+```
+
+## Your own rules
+
+`rules` runs a project's rules in the same pass and reports them into the same list.
+[The hooks](/api/check#your-own-rules).
+
+```ts run
+check('<p style="color:red">x</p>', {
+  a11y: false,
+  rules: (report) => ({
+    open: (tag, attrs, at) => attrs.has('style') && report('no-inline-style', 'use a utility class', at),
+  }),
+});
 ```

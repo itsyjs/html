@@ -148,7 +148,6 @@ export default defineConfig({
           { text: '/util', link: '/api/util' },
           { text: '/frame', link: '/api/frame' },
           { text: '/check', link: '/api/check' },
-          { text: '/a11y', link: '/api/a11y' },
           { text: '/create', link: '/api/create' },
         ],
       },

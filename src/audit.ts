@@ -45,18 +45,39 @@ export type Report = (rule: string, message: string, at: number) => void;
 
 /**
  * What a rule set sees as the audit walks the markup. One element at a time, in page order.
- * @internal
+ *
+ * Every hook is optional: a rule set implements only what it needs.
  */
 export interface Visitor {
   /** A start tag, with its attributes and the elements it sits inside, outermost first. */
   open?: (tag: string, attrs: ReadonlyMap<string, string>, at: number, ancestors: readonly string[]) => void;
+  /**
+   * A run of text, as written: everything between two tags, or the whole body of `<script>`,
+   * `<style>`, `<textarea>` and `<title>`. Entities are not decoded and a `${…}` in a template
+   * arrives as the four characters `${…}`.
+   */
+  text?: (content: string, at: number) => void;
   /** An element closed. `at` is where it started, and `text` says whether it held any. */
   close?: (tag: string, at: number, text: boolean) => void;
   /** The end of the markup, with every id on the page and where it was seen. */
   end?: (ids: ReadonlyMap<string, number>) => void;
 }
 
-/** A rule set `check()` can run in the same pass, such as `a11y`. Its shape is not public API. */
+/**
+ * A set of rules `check()` runs in the same pass as the markup audit, reporting into the same list.
+ *
+ * Called once per `check()` with a `report` function; the {@link Visitor} it returns is then driven
+ * over the markup in page order. Keep per-run state in the closure, as the accessibility rules do.
+ *
+ * @example
+ * ```ts
+ * const house: RuleSet = (report) => ({
+ *   open(tag, attrs, at) {
+ *     if (attrs.has('style')) report('no-inline-style', 'use a utility class', at);
+ *   },
+ * });
+ * ```
+ */
 export type RuleSet = (report: Report) => Visitor;
 
 // Stands in for a `${…}` when a template is audited. Inside a tag it means "some attributes we cannot see".
@@ -283,8 +304,16 @@ export const audit = (
   let i = 0;
   while (i < n) {
     if (text[i] !== '<') {
-      if (visit && held.length && !WS.test(text[i]!)) held[held.length - 1] = true;
-      i++;
+      // A run of text, up to the next tag. Taken whole rather than a character at a time, so a
+      // rule set can read what it says.
+      const e = text.indexOf('<', i);
+      const stop = e < 0 ? n : e;
+      if (visit) {
+        const run = text.slice(i, stop);
+        if (held.length && run.trim()) held[held.length - 1] = true;
+        visit.text?.(run, i);
+      }
+      i = stop;
       continue;
     }
     const at = i;
@@ -393,7 +422,11 @@ export const audit = (
         let e = lower.indexOf(`</${name}`, i);
         while (e >= 0 && !/[\s/>]/.test(lower[e + name.length + 2] ?? '>')) e = lower.indexOf(`</${name}`, e + 1);
         const stop = e < 0 ? n : e;
-        if (visit && held.length && text.slice(i, stop).trim()) held[held.length - 1] = true;
+        if (visit) {
+          const body = text.slice(i, stop);
+          if (held.length && body.trim()) held[held.length - 1] = true;
+          visit.text?.(body, i);
+        }
         i = stop;
       }
     }

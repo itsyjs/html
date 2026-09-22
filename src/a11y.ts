@@ -6,9 +6,17 @@
 // case below is deliberately silent.
 //
 // The rule names and most of the reasoning come from Svelte's a11y pass (MIT), which took them
-// from eslint-plugin-jsx-a11y. The rules that need the ARIA role graph — which roles exist, which
-// properties each one takes, which elements are interactive — are left out on purpose: they need
-// aria-query and axobject-query, 10.9 kB brotli between them, five times this whole library.
+// from eslint-plugin-jsx-a11y.
+//
+// The role tables below are written out rather than taken from aria-query and axobject-query,
+// which are 10.9 kB brotli between them and would be a dependency in a library that has none.
+// They cost nothing to ship — `check()` compiles this whole file away in production — so what
+// they are trimmed against is false positives, not bytes: a mapping that depends on an ancestor
+// or on another attribute is left out rather than guessed at. The one rule still missing is
+// "this `aria-*` is not allowed on this role": it needs the full role-to-properties graph, which
+// is both the largest table and the easiest one to be wrong with.
+//
+// This file is only ever reached from `check()`, inside its `__DEV__` branch.
 import type { RuleSet } from './audit.ts';
 
 type Attrs = ReadonlyMap<string, string>;
@@ -45,6 +53,103 @@ const INTAB = /^\s*\+?\d/;
 // An alt that is the file it came from: "IMG_1024.JPG", "photo-3.png", "dsc00042".
 const FILENAME = /^\s*(\S+\.(jpe?g|png|gif|svg|webp|avif|bmp)|(img|dsc|image|photo|screenshot)[-_]?\d+)\s*$/i;
 
+// Every ARIA role that may be written on an element. The abstract ones (`widget`, `section`,
+// `input`, …) are left out: they exist only in the taxonomy and do nothing in markup. A role from
+// another vocabulary — `doc-*` from DPUB-ARIA, `graphics-*` — carries a hyphen and is skipped
+// rather than guessed at.
+const ROLES = /* @__PURE__ */ set(
+  'alert alertdialog application article banner blockquote button caption cell checkbox code columnheader combobox comment complementary contentinfo definition deletion dialog directory document emphasis feed figure form generic grid gridcell group heading img insertion link list listbox listitem log main mark marquee math menu menubar menuitem menuitemcheckbox menuitemradio meter navigation none note option paragraph presentation progressbar radio radiogroup region row rowgroup rowheader scrollbar search searchbox separator slider spinbutton status strong subscript suggestion superscript switch tab table tablist tabpanel term textbox time timer toolbar tooltip tree treegrid treeitem',
+);
+
+// The state a role cannot be read without. Only what ARIA requires outright is here: a rule that
+// fires on correct markup is worse than one that misses, and the conditional ones (`separator`
+// only when focusable, `option` inside a listbox) are exactly where that goes wrong.
+const REQUIRED: Record<string, string> = {
+  checkbox: 'aria-checked',
+  combobox: 'aria-expanded',
+  heading: 'aria-level',
+  menuitemcheckbox: 'aria-checked',
+  menuitemradio: 'aria-checked',
+  radio: 'aria-checked',
+  scrollbar: 'aria-valuenow',
+  slider: 'aria-valuenow',
+  spinbutton: 'aria-valuenow',
+  switch: 'aria-checked',
+};
+
+// The role an element already carries, for the roles that the tag settles on its own. `<header>`,
+// `<footer>`, `<section>`, `<li>`, `<td>` and `<th>` all depend on an ancestor, so they are left
+// out: a wrong "redundant" is a rule nobody keeps on. The tags whose own attributes settle it —
+// `<a>`, `<input>`, `<select>` — are handled in `implicitRole` below.
+const IMPLICIT: Record<string, string> = {
+  article: 'article',
+  aside: 'complementary',
+  blockquote: 'blockquote',
+  button: 'button',
+  caption: 'caption',
+  code: 'code',
+  datalist: 'listbox',
+  del: 'deletion',
+  details: 'group',
+  dfn: 'term',
+  dialog: 'dialog',
+  em: 'emphasis',
+  fieldset: 'group',
+  figure: 'figure',
+  form: 'form',
+  hr: 'separator',
+  html: 'document',
+  ins: 'insertion',
+  main: 'main',
+  math: 'math',
+  menu: 'list',
+  meter: 'meter',
+  nav: 'navigation',
+  ol: 'list',
+  optgroup: 'group',
+  option: 'option',
+  output: 'status',
+  p: 'paragraph',
+  progress: 'progressbar',
+  search: 'search',
+  strong: 'strong',
+  sub: 'subscript',
+  sup: 'superscript',
+  table: 'table',
+  tbody: 'rowgroup',
+  textarea: 'textbox',
+  tfoot: 'rowgroup',
+  thead: 'rowgroup',
+  time: 'time',
+  tr: 'row',
+  ul: 'list',
+};
+
+// `<input>` types whose role holds whatever else is on the tag. The text-like types are left out:
+// with a `list` attribute they are a combobox instead, and that is not worth a false positive.
+const INPUT: Record<string, string> = {
+  button: 'button',
+  checkbox: 'checkbox',
+  image: 'button',
+  number: 'spinbutton',
+  radio: 'radio',
+  range: 'slider',
+  reset: 'button',
+  submit: 'button',
+};
+
+/** The role this element already has, when the markup on its own settles it. */
+const implicitRole = (tag: string, a: Attrs): string | undefined => {
+  if (/^h[1-6]$/.test(tag)) return 'heading';
+  if (tag === 'a' || tag === 'area') return a.has('href') ? 'link' : undefined;
+  if (tag === 'input') return INPUT[(a.get('type') ?? '').trim().toLowerCase()];
+  // A `<select>` is a listbox when it shows more than one row, and a combobox otherwise. Both are
+  // settled here, and both matter: without this, `<select role="combobox">` is reported as
+  // missing the `aria-expanded` that the element reports for itself.
+  if (tag === 'select') return a.has('multiple') || Number(a.get('size')) > 1 ? 'listbox' : 'combobox';
+  return IMPLICIT[tag];
+};
+
 const why: Record<string, string> = {
   'empty-heading': 'a screen reader announces a heading and then reads nothing',
   'empty-link': 'a screen reader reads out the URL instead',
@@ -77,7 +182,7 @@ const focusable = (tag: string, a: Attrs) => {
 // whether it has been satisfied, and its tag.
 type Frame = [rule: string, at: number, ok: boolean, tag: string];
 
-const rules: RuleSet = (report) => {
+export const rules: RuleSet = (report) => {
   // The depth of the nearest element that takes its subtree out of the page a person hears.
   // Depth rather than offset, so a void element such as `<img hidden>` releases on its next
   // sibling instead of latching until the parent closes.
@@ -212,6 +317,51 @@ const rules: RuleSet = (report) => {
         );
       }
 
+      const role = a.get('role');
+      if (role) {
+        // `role` takes a list, and the browser uses the first entry it knows. Roles from another
+        // vocabulary carry a hyphen and are none of this rule's business.
+        const tokens = role
+          .trim()
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((t) => t && !t.includes('-'));
+        const known = tokens.find((t) => ROLES.has(t));
+        if (tokens.length && !known) {
+          report(
+            'role-unknown',
+            `\`role="${role}"\` is not an ARIA role: the browser ignores it, so \`<${tag}>\` keeps the role it already had`,
+            at,
+          );
+        } else if (known) {
+          const implicit = implicitRole(tag, a);
+          if (known === implicit) {
+            report(
+              'role-redundant',
+              `\`<${tag} role="${known}">\`: \`<${tag}>\` is already a \`${known}\`, so the attribute says nothing the browser did not know`,
+              at,
+            );
+          } else if ((known === 'presentation' || known === 'none') && focusable(tag, a)) {
+            report(
+              'role-presentation-interactive',
+              `\`<${tag} role="${known}">\` can still be tabbed to: the browser drops a presentational role from anything focusable, so this does nothing`,
+              at,
+            );
+          } else {
+            // The state the role is read with. Skipped when the element already had the role,
+            // because then the browser reports its own state instead.
+            const need = REQUIRED[known];
+            if (need && !a.has(need)) {
+              report(
+                'role-required-props',
+                `\`role="${known}"\` has no \`${need}\`: a screen reader announces the role and then has no state to read`,
+                at,
+              );
+            }
+          }
+        }
+      }
+
       for (const [name, value] of a) {
         const v = value.trim();
         if (name.startsWith('aria-')) {
@@ -303,42 +453,8 @@ export type A11yRule =
   | 'label-control'
   | 'label-for'
   | 'misplaced-scope'
-  | 'positive-tabindex';
-
-/**
- * The accessibility rules, for `check()`'s `a11y` option.
- *
- * @example
- * ```ts
- * import { check } from '@itsy/html/check';
- * import { a11y } from '@itsy/html/a11y';
- *
- * assert.deepEqual(check(Page(data), { a11y }), []);
- * ```
- *
- * The production build compiles this down
- * to a rule set that looks at nothing, the same way `check()` compiles down to an empty array, so
- * a call left in shipped code costs nothing.
- */
-export const a11y: RuleSet = __DEV__ ? rules : () => ({});
-
-/**
- * The same rules with some of them turned off. The names are checked, so a typo is a type error
- * rather than a rule that quietly stays on.
- *
- * Reach for it when a rule is wrong for a whole codebase. For one element, prefer markup that says
- * why — `alt=""`, `role="presentation"` and `aria-hidden="true"` all silence the rules that apply
- * to them, and they tell a screen reader the same thing.
- *
- * @example
- * ```ts
- * check(Page(data), { a11y: without('img-alt-filename', 'positive-tabindex') });
- * ```
- */
-export const without = (...off: readonly A11yRule[]): RuleSet =>
-  __DEV__
-    ? (report) =>
-        rules((rule, message, at) => {
-          if (!off.includes(rule as A11yRule)) report(rule, message, at);
-        })
-    : () => ({});
+  | 'positive-tabindex'
+  | 'role-presentation-interactive'
+  | 'role-redundant'
+  | 'role-required-props'
+  | 'role-unknown';

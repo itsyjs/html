@@ -5,7 +5,7 @@ import { check } from '#check';
 import type { Finding, RuleSet } from '#check';
 
 const s = (x: unknown) => String(x);
-const codes = (markup: unknown) => check(s(markup)).map((p) => p.code);
+const codes = (markup: unknown) => check(s(markup), { a11y: false }).map((p) => p.code);
 
 suite('template audit: what the parser would repair', () => {
   test('8: a tag never closed with >', () => {
@@ -90,7 +90,11 @@ suite('check(): the output validator', () => {
     assert.deepEqual(check('<div>'), [{ code: 9, message: '`<div>` is never closed', at: 0, near: '<div>' }]);
     assert.deepEqual(codes('<b><i>x</b><br></br>'), [10, 12]);
     assert.deepEqual(codes('<div />'), [11, 9]);
-    assert.deepEqual(check('<!doctype html><html><head><title>t</title></head><body><p>x</p></body></html>'), []);
+    // A whole, valid document: clean with the accessibility rules on, which is the default.
+    assert.deepEqual(
+      check('<!doctype html><html lang="en"><head><title>t</title></head><body><p>x</p></body></html>'),
+      [],
+    );
     assert.deepEqual(codes('<!doctype html><html><head><title>t</title></head><body><p>x</body></html>'), [10]);
   });
   test('sees across templates and through attrs() spreads', () => {
@@ -112,7 +116,7 @@ suite('check(): the output validator', () => {
     assert.deepEqual(codes(html`<a href="${'/ok'}">y</a><a href="${'data:image/png;base64,x'}">y</a>`), []);
     assert.deepEqual(codes(html`<a href="${'javascript:x'}">y</a>`.toString()), [19]); // the string is enough
     assert.deepEqual(
-      check(html`<a href="${'javascript:x'}">y</a>`, { ids: false }).map((p) => p.code),
+      check(html`<a href="${'javascript:x'}">y</a>`, { ids: false, a11y: false }).map((p) => p.code),
       [19],
     ); // ids off does not turn it off
     assert.doesNotThrow(() => html`<a href="about:blank#blocked">y</a>`); // a template audit never reports it
@@ -147,10 +151,11 @@ const trace = (markup: string, ids = true) => {
     close: (tag, at, text) => log.push(`close ${tag}@${at} ${text}`),
     end: (map) => log.push(`end ${[...map.keys()].join(',')}`),
   });
-  check(markup, { ids, a11y: spy });
+  check(markup, { ids, a11y: false, rules: spy });
   return log;
 };
-const found = (markup: string, rule: RuleSet) => check(markup, { a11y: rule }).filter((p) => 'rule' in p) as Finding[];
+const found = (markup: string, rule: RuleSet) =>
+  check(markup, { a11y: false, rules: rule }).filter((p) => 'rule' in p) as Finding[];
 
 suite('the visitor a rule set is handed', () => {
   test('void elements open but never close, and are not text', () => {
@@ -203,7 +208,7 @@ suite('the visitor a rule set is handed', () => {
         if (tag === 'img' && !a.has('alt')) report('img-alt', `\`<img>\` has no \`alt\``, at);
       },
     });
-    const out = check('<a href="x">y</a><img src="b"><img src="c" alt="">', { a11y: rule });
+    const out = check('<a href="x">y</a><img src="b"><img src="c" alt="">', { a11y: false, rules: rule });
     assert.deepEqual(
       out.map((p) => ('rule' in p ? p.rule : p.code)),
       ['img-alt'],
@@ -217,7 +222,7 @@ suite('the visitor a rule set is handed', () => {
       found('<img src="a"><div>', rule).map((f) => f.rule),
       ['seen-img'],
     );
-    const mixed = check('<img src="a"><div>', { a11y: rule });
+    const mixed = check('<img src="a"><div>', { a11y: false, rules: rule });
     assert.deepEqual(
       mixed.map((p) => ('rule' in p ? p.rule : p.code)),
       ['seen-img', 9],
@@ -246,5 +251,96 @@ suite('the visitor a rule set is handed', () => {
       'close svg@0 true',
       'end ',
     ]);
+  });
+});
+
+// The text hook, rule-set composition and `check.enabled`: the parts of the dev surface a project
+// builds its own rules on, so the contract is pinned here rather than left to the a11y suite.
+const texts = (markup: Parameters<typeof check>[0]) => {
+  const log: [string, number][] = [];
+  const spy: RuleSet = () => ({ text: (content, at) => log.push([content, at]) });
+  check(markup, { a11y: false, rules: spy });
+  return log;
+};
+
+suite('the text hook', () => {
+  test('gives each run between two tags, as written, with its offset', () => {
+    assert.deepEqual(texts('<p>hello <b>world</b></p>'), [
+      ['hello ', 3],
+      ['world', 12],
+    ]);
+  });
+  test('text arrives as written: entities undecoded, escaped values already escaped', () => {
+    assert.deepEqual(
+      texts(html`<p>a &amp; ${'b'}</p>`).map(([t]) => t),
+      ['a &amp; b'], // the entity is left alone, and `b` needed no escaping
+    );
+    assert.deepEqual(
+      texts(html`<p>${'x < y'}</p>`).map(([t]) => t),
+      ['x &lt; y'], // check() reads a rendered page, so it sees what the renderer wrote
+    );
+  });
+  test('reaches the body of raw-text elements, which the walk otherwise jumps', () => {
+    assert.deepEqual(texts('<title>Sales</title>'), [['Sales', 7]]);
+    assert.deepEqual(texts('<textarea>  x  </textarea>'), [['  x  ', 10]]);
+    assert.deepEqual(texts('<script>if (a < b) {}</script>'), [['if (a < b) {}', 8]]);
+  });
+  test('fires for text outside any element, and not for an empty run', () => {
+    assert.deepEqual(texts('x<br>y'), [
+      ['x', 0],
+      ['y', 5],
+    ]);
+    assert.deepEqual(texts('<p></p>'), []);
+  });
+  test('whitespace is still not text as far as close() is concerned', () => {
+    // The hook sees the run; `close` reports whether any of it was non-whitespace.
+    assert.deepEqual(texts('<p>   </p>'), [['   ', 3]]);
+    assert.deepEqual(trace('<p>   </p>'), ['open p@0 [] {}', 'close p@0 false', 'end ']);
+  });
+});
+
+suite('rule sets compose', () => {
+  const seen =
+    (name: string): RuleSet =>
+    (report) => ({
+      open: (tag, _a, at) => tag === 'img' && report(name, name, at),
+    });
+
+  test('several sets run in one pass and report into one list, in page order', () => {
+    const out = check('<div><img src="a"></div>', { a11y: false, rules: [seen('one'), seen('two')] });
+    assert.deepEqual(
+      out.map((p) => ('rule' in p ? p.rule : p.code)),
+      ['one', 'two'],
+    );
+  });
+  test('a single rule set may be passed without an array', () => {
+    assert.deepEqual(
+      found('<img src="a">', seen('one')).map((f) => f.rule),
+      ['one'],
+    );
+  });
+  test('project rules and the accessibility rules run together', () => {
+    const out = check('<img src="a">', { rules: seen('house') });
+    // Both fire at offset 0, and the sort is stable, so this also pins the order: built-in first.
+    assert.deepEqual(
+      out.map((p) => ('rule' in p ? p.rule : p.code)),
+      ['img-alt', 'house'],
+    );
+  });
+  test('every hook is optional', () => {
+    assert.doesNotThrow(() => check('<p>x</p>', { a11y: false, rules: () => ({}) }));
+  });
+  test('an empty list of rule sets behaves like none at all', () => {
+    assert.deepEqual(check('<div>', { a11y: false, rules: [] }), [
+      { code: 9, message: '`<div>` is never closed', at: 0, near: '<div>' },
+    ]);
+  });
+});
+
+suite('check.enabled', () => {
+  test('is true wherever the checks actually run', () => {
+    // The production build sets it false; test/built/output.test.ts asserts that against dist/.
+    assert.equal(check.enabled, true);
+    assert.notDeepEqual(check('<div>'), []);
   });
 });

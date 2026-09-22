@@ -38,12 +38,6 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
-    "./a11y": {
-      "types": "./dist/a11y.d.ts",
-      "development": "./dist/a11y.dev.js",
-      "import": "./dist/a11y.js",
-      "default": "./dist/a11y.js"
-    },
     "./attrs": {
       "types": "./dist/attrs.d.ts",
       "development": "./dist/attrs.dev.js",
@@ -151,19 +145,7 @@
       "name": "@itsy/html/check (dev)",
       "path": "dist/check.dev.js",
       "import": "{ check }",
-      "limit": "4 KB"
-    },
-    {
-      "name": "@itsy/html/a11y",
-      "path": "dist/a11y.js",
-      "import": "{ a11y, without }",
-      "limit": "150 B"
-    },
-    {
-      "name": "@itsy/html/a11y (dev)",
-      "path": "dist/a11y.dev.js",
-      "import": "{ a11y, without }",
-      "limit": "2.5 KB"
+      "limit": "8 KB"
     },
     {
       "name": "@itsy/html/frame",
