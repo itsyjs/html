@@ -30,7 +30,8 @@ test('the page is well formed', () => {
 That one line covers unclosed tags, mismatched end tags, nesting a browser would rewrite, duplicate
 attributes, duplicate ids, id references pointing nowhere, any URL the guard blocked, and the
 [accessibility rules](/api/check#accessibility). Run it over the page rather than a fragment — the
-ids, the references and most of the accessibility rules are only visible at page level.
+ids and the references are only visible at page level, and so are the `<html>`, the `<title>` and
+the `for` targets that three of the accessibility rules read.
 
 Pass `{ a11y: false }` for the markup check on its own.
 

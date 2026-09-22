@@ -24,10 +24,12 @@ export interface Problem {
 }
 
 /**
- * One accessibility finding, as a rule set reports it. Advice, never a reason to throw.
+ * One finding, as a rule set reports it: an accessibility rule's, or a project's own. Advice, never
+ * a reason to throw.
  *
- * @typeParam R The rule names this finding can carry. `check()` fills in the names `a11y` reports,
- * so a misspelt name in a comparison is a type error rather than a test that never matches.
+ * @typeParam R The rule names this finding can carry. With only the built-in rules running,
+ * `check()` fills in `A11yRule`, so a misspelt name in a comparison is a type error rather than a
+ * test that never matches.
  */
 export interface Finding<R extends string = string> {
   /** Which rule found it, e.g. `img-alt`. Names, not numbers: these are not `HtmlError` codes. */
@@ -49,16 +51,19 @@ export type Report = (rule: string, message: string, at: number) => void;
  * Every hook is optional: a rule set implements only what it needs.
  */
 export interface Visitor {
-  /** A start tag, with its attributes and the elements it sits inside, outermost first. */
+  /**
+   * A start tag, with its attributes and the elements it sits inside, outermost first. Both are
+   * the rule set's to keep: the walk carries on with its own.
+   */
   open?: (tag: string, attrs: ReadonlyMap<string, string>, at: number, ancestors: readonly string[]) => void;
   /**
    * A run of text, as written: everything between two tags, or the whole body of `<script>`,
-   * `<style>`, `<textarea>` and `<title>`. Entities are not decoded and a `${…}` in a template
-   * arrives as the four characters `${…}`.
+   * `<style>`, `<textarea>` and `<title>`. Never empty. Entities are not decoded, and a `<` that
+   * opens no tag is text, as the browser reads it.
    */
   text?: (content: string, at: number) => void;
-  /** An element closed. `at` is where it started, and `text` says whether it held any. */
-  close?: (tag: string, at: number, text: boolean) => void;
+  /** An element closed. `at` is where it started, and `hadText` says whether it held anything but whitespace. */
+  close?: (tag: string, at: number, hadText: boolean) => void;
   /** The end of the markup, with every id on the page and where it was seen. */
   end?: (ids: ReadonlyMap<string, number>) => void;
 }
@@ -157,6 +162,9 @@ const IDREFS = new Set(
 );
 
 const WS = /\s/;
+// Where markup starts: `<` before a letter, `!` or `?`, or `</` before a letter. The browser reads
+// any other `<` as text, and so does the audit.
+const MARKUP = /<[a-z!?]|<\/[a-z]/gi;
 // What the URL guard renders in place of a blocked URL. Kept in step with `safeUrl` in shared.ts.
 const BLOCKED = 'about:blank#blocked';
 
@@ -206,6 +214,18 @@ export const audit = (
     visit?.close?.(name, from, hadText);
     return name;
   };
+  // A start tag, handed to the rule set. The ancestors go as a copy: the stack moves on, and a rule
+  // set may keep what it was given.
+  const enter = (name: string, attrMap: ReadonlyMap<string, string>, at: number) =>
+    visit?.open?.(name, attrMap, at, stack.slice());
+  // A run of text, taken whole so a rule set can read what it says. Whether it holds anything but
+  // whitespace is all the walk itself needs from it, and only for a rule set's `close`.
+  const onText = (from: number, to: number) => {
+    if (!visit || from === to) return;
+    const run = text.slice(from, to);
+    if (held.length && run.trim()) held[held.length - 1] = true;
+    visit.text?.(run, from);
+  };
   // Are we inside <svg> or <math>? The nearest of those and <foreignObject> decides: inside a
   // <foreignObject> the content is HTML again, with its nesting rules and its void elements.
   const foreign = (): boolean => {
@@ -222,13 +242,13 @@ export const audit = (
     if (foreign() || FOREIGN.has(name)) {
       // Inside SVG or MathML there are no nesting rules, and `/>` works. A rule set still needs
       // the close, or a self-closing tag leaves it waiting for an element that never ends.
-      visit?.open?.(name, attrMap, at, stack);
+      enter(name, attrMap, at);
       if (selfClosing) visit?.close?.(name, at, false);
       else push(name, at);
       return;
     }
     // <br>, <img> and friends never open anything, though a rule still wants to see them.
-    if (VOID.has(name)) return visit?.open?.(name, attrMap, at, stack);
+    if (VOID.has(name)) return enter(name, attrMap, at);
     if (selfClosing) {
       problem(
         11,
@@ -273,7 +293,7 @@ export const audit = (
       }
     }
     // Everything the browser would have closed is closed by now, so the ancestors are the real ones.
-    visit?.open?.(name, attrMap, at, stack);
+    enter(name, attrMap, at);
     push(name, at);
   };
 
@@ -300,20 +320,14 @@ export const audit = (
     while (stack.length > k) pop();
   };
 
-  // The main loop: find each `<`, read the tag, hand it to open() or close().
+  // The main loop: the text up to the next tag, then the tag, handed to open() or close().
   let i = 0;
   while (i < n) {
-    if (text[i] !== '<') {
-      // A run of text, up to the next tag. Taken whole rather than a character at a time, so a
-      // rule set can read what it says.
-      const e = text.indexOf('<', i);
-      const stop = e < 0 ? n : e;
-      if (visit) {
-        const run = text.slice(i, stop);
-        if (held.length && run.trim()) held[held.length - 1] = true;
-        visit.text?.(run, i);
-      }
-      i = stop;
+    MARKUP.lastIndex = i;
+    const next = MARKUP.exec(text)?.index ?? n;
+    if (next > i) {
+      onText(i, next);
+      i = next;
       continue;
     }
     const at = i;
@@ -331,11 +345,7 @@ export const audit = (
     }
     const closing = text[i + 1] === '/';
     let j = i + (closing ? 2 : 1);
-    if (!/[a-z]/i.test(text[j] ?? '')) {
-      i++; // not a tag, just a `<` in the text
-      continue;
-    }
-    // Read the tag name.
+    // Read the tag name. MARKUP matched, so it starts with a letter.
     const nameStart = j;
     while (j < n && !/[\s/>]/.test(text[j]!)) j++;
     const name = lower.slice(nameStart, j);
@@ -422,11 +432,7 @@ export const audit = (
         let e = lower.indexOf(`</${name}`, i);
         while (e >= 0 && !/[\s/>]/.test(lower[e + name.length + 2] ?? '>')) e = lower.indexOf(`</${name}`, e + 1);
         const stop = e < 0 ? n : e;
-        if (visit) {
-          const body = text.slice(i, stop);
-          if (held.length && body.trim()) held[held.length - 1] = true;
-          visit.text?.(body, i);
-        }
+        onText(i, stop);
         i = stop;
       }
     }

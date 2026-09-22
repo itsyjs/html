@@ -145,7 +145,7 @@
       "name": "@itsy/html/check (dev)",
       "path": "dist/check.dev.js",
       "import": "{ check }",
-      "limit": "8 KB"
+      "limit": "6 KB"
     },
     {
       "name": "@itsy/html/frame",

@@ -101,7 +101,7 @@ What a rule reports, mixed into the same list as `Problem` by
 `A11yRule` is the union of the twenty-three names the built-in accessibility rules can report.
 `check(markup)` returns `Finding<A11yRule>`, so a comparison against a name that does not exist is
 a type error rather than a test that never matches, and `a11y: { without: [...] }` checks its
-entries the same way.
+entries the same way. That object is `A11yOptions`, also from `@itsy/html/check`.
 
 ## `RuleSet`, `Visitor`, `Report`
 
@@ -112,7 +112,7 @@ type Report = (rule: string, message: string, at: number) => void;
 interface Visitor {
   open?: (tag: string, attrs: ReadonlyMap<string, string>, at: number, ancestors: readonly string[]) => void;
   text?: (content: string, at: number) => void;
-  close?: (tag: string, at: number, text: boolean) => void;
+  close?: (tag: string, at: number, hadText: boolean) => void;
   end?: (ids: ReadonlyMap<string, number>) => void;
 }
 ```

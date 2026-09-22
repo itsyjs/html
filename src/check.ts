@@ -1,6 +1,6 @@
 import type { Html } from './shared.ts';
 import { audit, type Finding, type Problem, type Report, type RuleSet, type Visitor } from './audit.ts';
-import { type A11yRule, rules } from './a11y.ts';
+import { type A11yRule, a11yRules } from './a11y.ts';
 
 export type { A11yRule, Finding, Problem, Report, RuleSet, Visitor };
 
@@ -62,23 +62,14 @@ const compose =
       text: (content, at) => {
         for (const v of seen) v.text?.(content, at);
       },
-      close: (tag, at, text) => {
-        for (const v of seen) v.close?.(tag, at, text);
+      close: (tag, at, hadText) => {
+        for (const v of seen) v.close?.(tag, at, hadText);
       },
       end: (ids) => {
         for (const v of seen) v.end?.(ids);
       },
     };
   };
-
-// The accessibility rules, with the named ones silenced.
-const a11ySet = (off: readonly A11yRule[]): RuleSet =>
-  off.length
-    ? (report) =>
-        rules((rule, message, at) => {
-          if (!off.includes(rule as A11yRule)) report(rule, message, at);
-        })
-    : rules;
 
 interface Check {
   /**
@@ -137,18 +128,14 @@ interface Check {
 export const check = ((markup: string | Html, options?: CheckOptions) => {
   const found: (Problem | Finding)[] = [];
   if (__DEV__) {
-    const { ids = true, a11y = true, rules: own } = options ?? {};
-    // The built-in rules first, so that on a tie at the same offset they read before a project's.
+    const { ids = true, a11y = true, rules = [] } = options ?? {};
+    // The built-in rules run first, so when they and a project's report from the same hook at the
+    // same offset, theirs reads first.
     const sets: RuleSet[] = [];
-    if (a11y !== false) sets.push(a11ySet((a11y === true ? undefined : a11y.without) ?? []));
-    if (own) sets.push(...(typeof own === 'function' ? [own] : own));
-    audit(
-      [String(markup)],
-      (p) => found.push(p),
-      { ids },
-      // One walk whatever the count: a single set is driven directly, several through `compose`.
-      sets.length === 1 ? sets[0] : sets.length ? compose(sets) : undefined,
-    );
+    if (a11y) sets.push(a11yRules(a11y === true ? [] : a11y.without));
+    sets.push(...(typeof rules === 'function' ? [rules] : rules));
+    // One walk whatever the count: a single set is driven directly, several through `compose`.
+    audit([String(markup)], (p) => found.push(p), { ids }, sets.length > 1 ? compose(sets) : sets[0]);
     found.sort((a, b) => a.at - b.at); // a rule reports as the audit walks; this puts everything in page order
   }
   return found as Problem[];

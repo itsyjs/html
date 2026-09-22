@@ -1,6 +1,6 @@
 # Import map
 
-Seven entry points. Each is its own module, so a bundler keeps only what you import.
+Six entry points. Each is its own module, so a bundler keeps only what you import.
 
 | import                             | exports                                                     |
 | ---------------------------------- | ----------------------------------------------------------- |
@@ -16,8 +16,9 @@ Seven entry points. Each is its own module, so a bundler keeps only what you imp
 `join` does not pull in the other six.
 
 Types come from the entry point they belong to: `Renderable` and the `attrs()` types from the root,
-`Problem`, `Finding`, `RuleSet`, `Visitor`, `Report`, `A11yRule` and `CheckOptions` from `/check`, `FrameOptions`, `HeadEntry` and `FramePart` from
-`/frame`, `CreateOptions` from `/create`. They are listed in [types](/reference/types).
+`Problem`, `Finding`, `RuleSet`, `Visitor`, `Report`, `A11yRule`, `A11yOptions` and `CheckOptions`
+from `/check`, `FrameOptions`, `HeadEntry` and `FramePart` from `/frame`, `CreateOptions` from
+`/create`. They are listed in [types](/reference/types).
 
 ## Two builds per entry
 

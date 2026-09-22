@@ -148,7 +148,7 @@ const trace = (markup: string, ids = true) => {
   const spy: RuleSet = () => ({
     open: (tag, a, at, anc) =>
       log.push(`open ${tag}@${at} [${anc.join('>')}] {${[...a].map(([k, v]) => `${k}=${v}`).join(',')}}`),
-    close: (tag, at, text) => log.push(`close ${tag}@${at} ${text}`),
+    close: (tag, at, hadText) => log.push(`close ${tag}@${at} ${hadText}`),
     end: (map) => log.push(`end ${[...map.keys()].join(',')}`),
   });
   check(markup, { ids, a11y: false, rules: spy });
@@ -197,6 +197,12 @@ suite('the visitor a rule set is handed', () => {
   });
   test('close reports where the element started', () => {
     assert.deepEqual(trace('<section><i>x</i></section>').slice(2), ['close i@9 true', 'close section@0 true', 'end ']);
+  });
+  test('ancestors are a copy, so a rule set can keep them', () => {
+    const kept: (readonly string[])[] = [];
+    const spy: RuleSet = () => ({ open: (_tag, _a, _at, anc) => kept.push(anc) });
+    check('<div><p><b>x</b></p></div><span></span>', { a11y: false, rules: spy });
+    assert.deepEqual(kept, [[], ['div'], ['div', 'p'], []]);
   });
   test('every id reaches end(), even with the id checks turned off', () => {
     assert.deepEqual(trace('<i id="a"></i><b id="b"></b>', false).at(-1), 'end a,b');
@@ -291,6 +297,19 @@ suite('the text hook', () => {
       ['y', 5],
     ]);
     assert.deepEqual(texts('<p></p>'), []);
+    assert.deepEqual(texts('<title></title><script></script>'), []); // a raw-text body is no different
+  });
+  test('a `<` that opens no tag is part of the run, as the browser reads it', () => {
+    assert.deepEqual(texts('<p>a < b</p>'), [['a < b', 3]]);
+    assert.deepEqual(texts('<p>1 <3 2</p>'), [['1 <3 2', 3]]);
+    assert.deepEqual(texts('<p><</p>'), [['<', 3]]);
+    assert.deepEqual(texts('a <'), [['a <', 0]]);
+    // A comment still ends a run, and so does anything that does open a tag.
+    assert.deepEqual(texts('<p>a<!-- c -->b <i>c</i></p>'), [
+      ['a', 3],
+      ['b ', 14],
+      ['c', 19],
+    ]);
   });
   test('whitespace is still not text as far as close() is concerned', () => {
     // The hook sees the run; `close` reports whether any of it was non-whitespace.
@@ -321,7 +340,9 @@ suite('rule sets compose', () => {
   });
   test('project rules and the accessibility rules run together', () => {
     const out = check('<img src="a">', { rules: seen('house') });
-    // Both fire at offset 0, and the sort is stable, so this also pins the order: built-in first.
+    // Both fire from `open` at offset 0, and the sort is stable, so this also pins the order:
+    // built-in first. On a tie it is report order that decides, so a finding from `close` comes
+    // after one from `open` at the same offset, whichever set reported it.
     assert.deepEqual(
       out.map((p) => ('rule' in p ? p.rule : p.code)),
       ['img-alt', 'house'],

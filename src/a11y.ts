@@ -17,7 +17,7 @@
 // is both the largest table and the easiest one to be wrong with.
 //
 // This file is only ever reached from `check()`, inside its `__DEV__` branch.
-import type { RuleSet } from './audit.ts';
+import type { Report, RuleSet } from './audit.ts';
 
 type Attrs = ReadonlyMap<string, string>;
 
@@ -45,6 +45,7 @@ const TEXT = /\S/;
 const TRUE = /^\s*true\s*$/i;
 const NONE = /display\s*:\s*none/i;
 const DECOR = /^\s*(presentation|none)\b/i;
+const HEADING = /^h[1-6]$/;
 // A tab stop the browser puts before everything else: 0 or more zeroes then 1-9. `0`, `-1`, `0x2`
 // and `.5` all read as zero or less and are correct.
 const AHEAD = /^\s*\+?0*[1-9]/;
@@ -53,17 +54,18 @@ const INTAB = /^\s*\+?\d/;
 // An alt that is the file it came from: "IMG_1024.JPG", "photo-3.png", "dsc00042".
 const FILENAME = /^\s*(\S+\.(jpe?g|png|gif|svg|webp|avif|bmp)|(img|dsc|image|photo|screenshot)[-_]?\d+)\s*$/i;
 
-// Every ARIA role that may be written on an element. The abstract ones (`widget`, `section`,
-// `input`, …) are left out: they exist only in the taxonomy and do nothing in markup. A role from
-// another vocabulary — `doc-*` from DPUB-ARIA, `graphics-*` — carries a hyphen and is skipped
-// rather than guessed at.
+// Every ARIA role that may be written on an element, the ARIA 1.3 draft's included. The abstract
+// ones (`widget`, `section`, `input`, …) are left out: they exist only in the taxonomy and do
+// nothing in markup. A role from another vocabulary — `doc-*` from DPUB-ARIA, `graphics-*` —
+// carries a hyphen and is skipped rather than guessed at.
 const ROLES = /* @__PURE__ */ set(
-  'alert alertdialog application article banner blockquote button caption cell checkbox code columnheader combobox comment complementary contentinfo definition deletion dialog directory document emphasis feed figure form generic grid gridcell group heading img insertion link list listbox listitem log main mark marquee math menu menubar menuitem menuitemcheckbox menuitemradio meter navigation none note option paragraph presentation progressbar radio radiogroup region row rowgroup rowheader scrollbar search searchbox separator slider spinbutton status strong subscript suggestion superscript switch tab table tablist tabpanel term textbox time timer toolbar tooltip tree treegrid treeitem',
+  'alert alertdialog application article banner blockquote button caption cell checkbox code columnheader combobox comment complementary contentinfo definition deletion dialog directory document emphasis feed figure form generic grid gridcell group heading image img insertion link list listbox listitem log main mark marquee math menu menubar menuitem menuitemcheckbox menuitemradio meter navigation none note option paragraph presentation progressbar radio radiogroup region row rowgroup rowheader scrollbar search searchbox sectionfooter sectionheader separator slider spinbutton status strong subscript suggestion superscript switch tab table tablist tabpanel term textbox time timer toolbar tooltip tree treegrid treeitem',
 );
 
 // The state a role cannot be read without. Only what ARIA requires outright is here: a rule that
 // fires on correct markup is worse than one that misses, and the conditional ones (`separator`
-// only when focusable, `option` inside a listbox) are exactly where that goes wrong.
+// only when focusable, `option` inside a listbox) are exactly where that goes wrong. `spinbutton`
+// is not here either: ARIA asks for its `aria-valuenow` only when it has a value.
 const REQUIRED: Record<string, string> = {
   checkbox: 'aria-checked',
   combobox: 'aria-expanded',
@@ -73,17 +75,17 @@ const REQUIRED: Record<string, string> = {
   radio: 'aria-checked',
   scrollbar: 'aria-valuenow',
   slider: 'aria-valuenow',
-  spinbutton: 'aria-valuenow',
   switch: 'aria-checked',
 };
 
-// The role an element already carries, for the roles that the tag settles on its own. `<header>`,
-// `<footer>`, `<section>`, `<li>`, `<td>` and `<th>` all depend on an ancestor, so they are left
-// out: a wrong "redundant" is a rule nobody keeps on. The tags whose own attributes settle it —
-// `<a>`, `<input>`, `<select>` — are handled in `implicitRole` below.
+// The role an element already carries, for the roles that the tag settles on its own. `<aside>`,
+// `<header>`, `<footer>`, `<section>`, `<li>`, `<td>` and `<th>` all depend on an ancestor, so
+// they are left out: a wrong "redundant" is a rule nobody keeps on. `<ul>`, `<ol>` and `<menu>` are
+// left out too, though they are always a list: Safari drops that role from a list styled
+// `list-style: none`, and `role="list"` is how you put it back. The tags whose own attributes
+// settle it — `<a>`, `<input>`, `<select>` — are handled in `implicitRole` below.
 const IMPLICIT: Record<string, string> = {
   article: 'article',
-  aside: 'complementary',
   blockquote: 'blockquote',
   button: 'button',
   caption: 'caption',
@@ -102,10 +104,8 @@ const IMPLICIT: Record<string, string> = {
   ins: 'insertion',
   main: 'main',
   math: 'math',
-  menu: 'list',
   meter: 'meter',
   nav: 'navigation',
-  ol: 'list',
   optgroup: 'group',
   option: 'option',
   output: 'status',
@@ -122,7 +122,6 @@ const IMPLICIT: Record<string, string> = {
   thead: 'rowgroup',
   time: 'time',
   tr: 'row',
-  ul: 'list',
 };
 
 // `<input>` types whose role holds whatever else is on the tag. The text-like types are left out:
@@ -138,11 +137,24 @@ const INPUT: Record<string, string> = {
   submit: 'button',
 };
 
+// The state an `<input>` reports for itself, whatever role it is given: a checkbox or radio button
+// its checkedness, a range or number its value. `<input type="checkbox" role="switch">` is the
+// native switch, and ARIA in HTML forbids the `aria-checked` a rule would otherwise ask it for.
+const NATIVE: Record<string, string> = {
+  checkbox: 'aria-checked',
+  number: 'aria-valuenow',
+  radio: 'aria-checked',
+  range: 'aria-valuenow',
+};
+
+/** An `<input>`'s type, as the browser reads it. */
+const inputType = (a: Attrs) => (a.get('type') ?? '').trim().toLowerCase();
+
 /** The role this element already has, when the markup on its own settles it. */
 const implicitRole = (tag: string, a: Attrs): string | undefined => {
-  if (/^h[1-6]$/.test(tag)) return 'heading';
+  if (HEADING.test(tag)) return 'heading';
   if (tag === 'a' || tag === 'area') return a.has('href') ? 'link' : undefined;
-  if (tag === 'input') return INPUT[(a.get('type') ?? '').trim().toLowerCase()];
+  if (tag === 'input') return INPUT[inputType(a)];
   // A `<select>` is a listbox when it shows more than one row, and a combobox otherwise. Both are
   // settled here, and both matter: without this, `<select role="combobox">` is reported as
   // missing the `aria-expanded` that the element reports for itself.
@@ -178,11 +190,52 @@ const focusable = (tag: string, a: Attrs) => {
   return CONTROL.has(tag) && !a.has('disabled') && a.get('type') !== 'hidden';
 };
 
+/** Reports what is wrong with an element's `role`, if anything. */
+const checkRole = (report: Report, tag: string, a: Attrs, at: number) => {
+  const role = a.get('role') ?? '';
+  const tokens = role.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return; // an empty `role` is `aria-empty`'s
+  // `role` takes a list, and the browser uses the first entry it knows. A role from another
+  // vocabulary may be that entry, and these tables cannot say, so the check stops at one.
+  const known = tokens.find((t) => ROLES.has(t) || t.includes('-'));
+  if (known?.includes('-')) return;
+  if (!known) {
+    report(
+      'role-unknown',
+      `\`role="${role}"\` is not an ARIA role: the browser ignores it, so \`<${tag}>\` keeps the role it already had`,
+      at,
+    );
+  } else if (known === implicitRole(tag, a)) {
+    report(
+      'role-redundant',
+      `\`<${tag} role="${known}">\`: \`<${tag}>\` is already a \`${known}\`, so the attribute says nothing the browser did not know`,
+      at,
+    );
+  } else if ((known === 'presentation' || known === 'none') && focusable(tag, a)) {
+    report(
+      'role-presentation-interactive',
+      `\`<${tag} role="${known}">\` can still be tabbed to: the browser drops a presentational role from anything focusable, so this does nothing`,
+      at,
+    );
+  } else {
+    // The state the role is read with, unless the element supplies it: one that already had the
+    // role reports its own (the branch above), and so does an `<input>` with the state built in.
+    const need = REQUIRED[known];
+    if (need && !a.has(need) && !(tag === 'input' && NATIVE[inputType(a)] === need)) {
+      report(
+        'role-required-props',
+        `\`role="${known}"\` has no \`${need}\`: a screen reader announces the role and then has no state to read`,
+        at,
+      );
+    }
+  }
+};
+
 // An element waiting to find out whether anything names it: the rule to report, where it started,
 // whether it has been satisfied, and its tag.
 type Frame = [rule: string, at: number, ok: boolean, tag: string];
 
-export const rules: RuleSet = (report) => {
+const rules: RuleSet = (report) => {
   // The depth of the nearest element that takes its subtree out of the page a person hears.
   // Depth rather than offset, so a void element such as `<img hidden>` releases on its next
   // sibling instead of latching until the parent closes.
@@ -285,7 +338,7 @@ export const rules: RuleSet = (report) => {
             at,
           );
         }
-      } else if (tag === 'button' || /^h[1-6]$/.test(tag)) {
+      } else if (tag === 'button' || HEADING.test(tag)) {
         watch.push([
           tag === 'button' ? 'empty-button' : 'empty-heading',
           at,
@@ -316,51 +369,7 @@ export const rules: RuleSet = (report) => {
           at,
         );
       }
-
-      const role = a.get('role');
-      if (role) {
-        // `role` takes a list, and the browser uses the first entry it knows. Roles from another
-        // vocabulary carry a hyphen and are none of this rule's business.
-        const tokens = role
-          .trim()
-          .toLowerCase()
-          .split(/\s+/)
-          .filter((t) => t && !t.includes('-'));
-        const known = tokens.find((t) => ROLES.has(t));
-        if (tokens.length && !known) {
-          report(
-            'role-unknown',
-            `\`role="${role}"\` is not an ARIA role: the browser ignores it, so \`<${tag}>\` keeps the role it already had`,
-            at,
-          );
-        } else if (known) {
-          const implicit = implicitRole(tag, a);
-          if (known === implicit) {
-            report(
-              'role-redundant',
-              `\`<${tag} role="${known}">\`: \`<${tag}>\` is already a \`${known}\`, so the attribute says nothing the browser did not know`,
-              at,
-            );
-          } else if ((known === 'presentation' || known === 'none') && focusable(tag, a)) {
-            report(
-              'role-presentation-interactive',
-              `\`<${tag} role="${known}">\` can still be tabbed to: the browser drops a presentational role from anything focusable, so this does nothing`,
-              at,
-            );
-          } else {
-            // The state the role is read with. Skipped when the element already had the role,
-            // because then the browser reports its own state instead.
-            const need = REQUIRED[known];
-            if (need && !a.has(need)) {
-              report(
-                'role-required-props',
-                `\`role="${known}"\` has no \`${need}\`: a screen reader announces the role and then has no state to read`,
-                at,
-              );
-            }
-          }
-        }
-      }
+      checkRole(report, tag, a, at);
 
       for (const [name, value] of a) {
         const v = value.trim();
@@ -401,7 +410,7 @@ export const rules: RuleSet = (report) => {
       }
     },
 
-    close(tag, at, text) {
+    close(tag, at, hadText) {
       const f = watch[watch.length - 1];
       if (!f || f[1] !== at) return; // not something we are watching; an unclosed one is code 9
       watch.pop();
@@ -412,7 +421,7 @@ export const rules: RuleSet = (report) => {
           '`<label>` is not attached to a control: it labels nothing, and clicking it does nothing',
           at,
         );
-      } else if (!text) {
+      } else if (!hadText) {
         report(f[0], `\`<${f[3]}>\` has no text: ${why[f[0]]}`, at);
       }
     },
@@ -433,7 +442,16 @@ export const rules: RuleSet = (report) => {
   };
 };
 
-/** Every rule `a11y` can report. The set is closed, so a misspelt name in a test is a type error. */
+/** The accessibility rules, with the ones named in `off` silenced. `check()` runs them by default. */
+export const a11yRules = (off: readonly A11yRule[] = []): RuleSet =>
+  off.length
+    ? (report) =>
+        rules((rule, message, at) => {
+          if (!off.includes(rule as A11yRule)) report(rule, message, at);
+        })
+    : rules;
+
+/** Every name the accessibility rules report. The set is closed, so a misspelt name is a type error. */
 export type A11yRule =
   | 'a-href'
   | 'aria-boolean'

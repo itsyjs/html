@@ -274,6 +274,11 @@ suite('a11y rules: regressions', () => {
     assert.deepEqual(found('<button aria-label="\u0130ptal" aria-pressed="yes">x</button>'), ['aria-boolean']);
     assert.deepEqual(found('<nav aria-label="\u0130stanbul"><a href="/">Ev</a></nav>'), []);
   });
+  test('a `<` that opens no tag is text, as the browser reads it', () => {
+    assert.deepEqual(found('<button><</button>'), []);
+    assert.deepEqual(found('<h2>1 <3 2</h2>'), []);
+    assert.deepEqual(found('<button>< </button>'), []);
+  });
 });
 
 suite('turning rules off', () => {
@@ -302,6 +307,9 @@ suite('turning rules off', () => {
   test('an empty a11y object is just a11y', () => {
     assert.deepEqual(names(check(page, { a11y: {} })), names(check(page)));
   });
+  test('a JavaScript caller passing null turns them off rather than throwing', () => {
+    assert.deepEqual(names(check(page, { a11y: null as unknown as false })), ['code 9']);
+  });
 });
 
 // The role rules. As above, the clean cases are the point: these read a hand-written table, so a
@@ -314,6 +322,12 @@ suite('role rules', () => {
     assert.deepEqual(found('<div role="BUTTON" aria-label="x">x</div>'), []); // roles are case-insensitive
     assert.deepEqual(found('<div role="  button  " aria-label="x">x</div>'), []);
   });
+  test('role-unknown: the roles the ARIA 1.3 draft adds are roles', () => {
+    assert.deepEqual(found('<div role="image" aria-label="A map">x</div>'), []);
+    assert.deepEqual(found('<div role="sectionheader">x</div>'), []);
+    assert.deepEqual(found('<div role="sectionfooter">x</div>'), []);
+    assert.deepEqual(found('<mark role="mark">x</mark>'), []);
+  });
   test('role-unknown: a fallback list is deliberate, and other vocabularies are not ours', () => {
     // The browser takes the first role it knows, so a list with a real role in it is fine.
     assert.deepEqual(found('<div role="switch button" aria-checked="true">x</div>'), []);
@@ -321,9 +335,17 @@ suite('role rules', () => {
     assert.deepEqual(found('<div role="graphics-document">x</div>'), []); // Graphics ARIA
     assert.deepEqual(found('<div role="nonsense alsononsense">x</div>'), ['role-unknown']);
   });
+  test('role rules: a role from another vocabulary ends the check wherever it sits', () => {
+    // A browser that knows DPUB-ARIA takes doc-abstract here, so the role is not ignored…
+    assert.deepEqual(found('<section role="nonsense doc-abstract">x</section>'), []);
+    // …and it takes doc-abstract before checkbox, so no aria-checked is owed.
+    assert.deepEqual(found('<div role="doc-abstract checkbox">x</div>'), []);
+    // Listed first, checkbox is the role every browser takes.
+    assert.deepEqual(found('<div role="checkbox doc-abstract">x</div>'), ['role-required-props']);
+  });
   test('role-redundant: the element already had that role', () => {
     assert.deepEqual(found('<nav role="navigation">x</nav>'), ['role-redundant']);
-    assert.deepEqual(found('<ul role="list"><li>x</li></ul>'), ['role-redundant']);
+    assert.deepEqual(found('<button role="button">x</button>'), ['role-redundant']);
     assert.deepEqual(found('<h2 role="heading">x</h2>'), ['role-redundant']);
     assert.deepEqual(found('<a href="/x" role="link">y</a>'), ['role-redundant']);
     assert.deepEqual(found('<input type="checkbox" role="checkbox">'), ['role-redundant']);
@@ -332,13 +354,22 @@ suite('role rules', () => {
     assert.deepEqual(found('<a role="button" href="/x">y</a>'), []);
   });
   test('role-redundant: stays silent where the role depends on context', () => {
-    // <header>, <footer>, <section>, <li>, <td> and <select> all depend on an ancestor or on
-    // another attribute, so none of them are in the table and none of them report.
+    // <header>, <footer>, <section> and <aside> take their role from an ancestor, so none of them
+    // are in the table and none of them report.
     assert.deepEqual(found('<header role="banner">x</header>'), []);
     assert.deepEqual(found('<footer role="contentinfo">x</footer>'), []);
     assert.deepEqual(found('<section role="region" aria-label="x">y</section>'), []);
+    // Inside an <article>, an unnamed <aside> is generic: the role is what makes it a landmark.
+    assert.deepEqual(found('<article><h2>t</h2><aside role="complementary">x</aside></article>'), []);
     assert.deepEqual(found('<a role="link">y</a>'), []); // no href, so no implicit link to be redundant with
     assert.deepEqual(found('<input type="text" role="textbox">'), []);
+  });
+  test('role-redundant: a list may restate its role', () => {
+    // Safari drops the list role from a list styled `list-style: none`, and role="list" is how you
+    // put it back, so it is not redundant in practice.
+    assert.deepEqual(found('<ul role="list"><li>x</li></ul>'), []);
+    assert.deepEqual(found('<ol role="list"><li>x</li></ol>'), []);
+    assert.deepEqual(found('<menu role="list"><li>x</li></menu>'), []);
   });
   test('role-redundant: a <select> settles its own role from multiple and size', () => {
     // Without this, role="combobox" here reports a missing aria-expanded the element provides
@@ -356,12 +387,23 @@ suite('role rules', () => {
     assert.deepEqual(found('<div role="slider" aria-valuenow="3" aria-label="x">y</div>'), []);
     assert.deepEqual(found('<div role="heading">x</div>'), ['role-required-props']);
     assert.deepEqual(found('<div role="heading" aria-level="2">x</div>'), []);
+    // ARIA asks a spinbutton for aria-valuenow only once it has a value.
+    assert.deepEqual(found('<div role="spinbutton" aria-label="Quantity" tabindex="0"></div>'), []);
   });
   test('role-required-props: not where the element brings the state itself', () => {
-    // <input type=checkbox> reports its own checked state, so the role adds nothing and the
-    // missing aria-checked is not a problem. That is role-redundant's business, not this rule's.
+    // Given its own role back, an element reports its own state. That is role-redundant's business.
     assert.deepEqual(found('<input type="checkbox" role="checkbox">'), ['role-redundant']);
     assert.deepEqual(found('<input type="range" role="slider">'), ['role-redundant']);
+    // Given another role, a checkbox or radio button still reports its checkedness, and ARIA in HTML
+    // forbids aria-checked on one. This is the native switch.
+    assert.deepEqual(found('<input type="checkbox" role="switch">'), []);
+    assert.deepEqual(found('<input type="checkbox" role="switch" checked>'), []);
+    assert.deepEqual(found('<input type="checkbox" role="menuitemcheckbox">'), []);
+    assert.deepEqual(found('<input type="radio" role="menuitemradio">'), []);
+    assert.deepEqual(found('<input type="range" role="scrollbar">'), []);
+    // Elements with no such state of their own still owe it.
+    assert.deepEqual(found('<button role="switch">x</button>'), ['role-required-props']);
+    assert.deepEqual(found('<input role="switch">'), ['role-required-props']);
     assert.deepEqual(found('<div role="button" aria-label="x">y</div>'), []); // needs no state
   });
   test('role-presentation-interactive: a presentational role the keyboard still reaches', () => {

@@ -2,7 +2,7 @@
 
 ```ts
 import { check } from '@itsy/html/check';
-import type { Problem, Finding, RuleSet, Visitor, Report, A11yRule, CheckOptions } from '@itsy/html/check';
+import type { Problem, Finding, RuleSet, Visitor, Report, A11yRule, A11yOptions, CheckOptions } from '@itsy/html/check';
 ```
 
 Everything the library checks lives here: the [markup check](/guide/checks) over a rendered page,
@@ -29,7 +29,7 @@ Because it sees the finished page, it catches what one `html` call cannot:
 - [code 15](/reference/errors#e15), an id reference with no matching id
 - [code 16](/reference/errors#e16), an id used twice
 - [code 19](/reference/errors#e19), a URL the guard replaced with `about:blank#blocked`
-- every [accessibility rule](#accessibility), which needs the whole page for the same reason
+- the [accessibility rules](#accessibility), which need the finished markup for the same reason
 
 ::: danger Always `[]` in the production build
 There is no check in the production build, so `check()` there returns an empty array whatever you
@@ -43,8 +43,12 @@ build](/recipes/testing#make-sure-you-are-on-the-dev-build).
 ```ts
 interface CheckOptions {
   ids?: boolean; // default true
-  a11y?: boolean | { without?: readonly A11yRule[] }; // default true
+  a11y?: boolean | A11yOptions; // default true
   rules?: RuleSet | readonly RuleSet[];
+}
+
+interface A11yOptions {
+  without?: readonly A11yRule[]; // rules to silence, by name
 }
 ```
 
@@ -177,8 +181,15 @@ cannot be sure:
   three are respected.
 - A name from `aria-label`, `aria-labelledby` or `title`, on the element or on anything inside it,
   counts as text. `<button><img src="i.svg" alt="Delete"></button>` is silent.
-- The role tables hold only the mappings the markup settles on its own. `<header role="banner">`
-  and `<li role="listitem">` depend on an ancestor, so neither is reported as redundant.
+- The role tables hold only the mappings the markup settles on its own. `<header role="banner">`,
+  `<aside role="complementary">` and `<li role="listitem">` depend on an ancestor, so none of them
+  is reported as redundant.
+- `<ul role="list">` is not reported either. Safari drops the list role from a list styled
+  `list-style: none`, and restating it is how you put it back.
+- An `<input>` keeps its own state whatever role it is given. `<input type="checkbox" role="switch">`
+  is the native switch, and needs no `aria-checked` — ARIA in HTML forbids one.
+- `role` takes a fallback list, and the browser uses the first entry it knows. A role from another
+  vocabulary, such as DPUB-ARIA's `doc-*`, may be that entry, so the role rules stop at one.
 - The rules that need the full role-to-properties graph — which `aria-*` each role allows — are
   left out. That table is the largest and the easiest one to be wrong with.
 
@@ -204,7 +215,7 @@ type Report = (rule: string, message: string, at: number) => void;
 interface Visitor {
   open?: (tag: string, attrs: ReadonlyMap<string, string>, at: number, ancestors: readonly string[]) => void;
   text?: (content: string, at: number) => void;
-  close?: (tag: string, at: number, text: boolean) => void;
+  close?: (tag: string, at: number, hadText: boolean) => void;
   end?: (ids: ReadonlyMap<string, number>) => void;
 }
 ```
@@ -215,11 +226,13 @@ itself.
 
 - **`open`** — a start tag. `attrs` has lowercased names and verbatim values; a bare attribute is
   present with an empty value. `ancestors` is outermost first, and holds what is _really_ open:
-  anything the browser would have closed already is closed. A void element opens and never closes.
-- **`text`** — a run of text, as written. Entities are not decoded. It fires for the body of
-  `<script>`, `<style>`, `<textarea>` and `<title>` too.
-- **`close`** — `at` is where the element _started_, so it pairs with `open`. `text` says whether
-  it held any non-whitespace.
+  anything the browser would have closed already is closed. Both are yours to keep. A void element
+  opens and never closes.
+- **`text`** — a run of text, as written, and never empty. Entities are not decoded, and a `<` that
+  opens no tag is part of the text, as the browser reads it. It fires for the body of `<script>`,
+  `<style>`, `<textarea>` and `<title>` too.
+- **`close`** — `at` is where the element _started_, so it pairs with `open`. `hadText` says
+  whether it held any non-whitespace.
 - **`end`** — every id on the page and where it was seen.
 
 Pass an array to run several. Findings from all of them are sorted into page order with the markup
