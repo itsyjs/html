@@ -54,19 +54,19 @@ export interface CheckOptions {
 const compose =
   (sets: readonly RuleSet[]): RuleSet =>
   (report) => {
-    const seen = sets.map((s) => s(report));
+    const visitors = sets.map((s) => s(report));
     return {
       open: (tag, attrs, at, ancestors) => {
-        for (const v of seen) v.open?.(tag, attrs, at, ancestors);
+        for (const v of visitors) v.open?.(tag, attrs, at, ancestors);
       },
       text: (content, at) => {
-        for (const v of seen) v.text?.(content, at);
+        for (const v of visitors) v.text?.(content, at);
       },
       close: (tag, at, hadText) => {
-        for (const v of seen) v.close?.(tag, at, hadText);
+        for (const v of visitors) v.close?.(tag, at, hadText);
       },
       end: (ids) => {
-        for (const v of seen) v.end?.(ids);
+        for (const v of visitors) v.end?.(ids);
       },
     };
   };
@@ -128,8 +128,9 @@ interface Check {
 export const check = ((markup: string | Html, options?: CheckOptions) => {
   const found: (Problem | Finding)[] = [];
   if (__DEV__) {
-    // What is left out takes its default. A `null` from JavaScript is outside the types, and reads
-    // as `false` wherever it lands: rules off, no rules of your own, id checks off. Never a throw.
+    // What is left out takes its default, and a `null` in place of the options leaves them all out.
+    // A `null` inside them is outside the types too, and reads as `false` wherever it lands: rules
+    // off, no rules of your own, id checks off. Never a throw.
     const { ids = true, a11y = true, rules } = options ?? {};
     // The built-in rules run first, so when they and a project's report from the same hook at the
     // same offset, theirs reads first.

@@ -3,7 +3,7 @@ import { computed, ref, watch, watchPostEffect } from 'vue';
 import { withBase } from 'vitepress';
 import { HtmlError, attrs, cx, html, isHtml, raw } from '#index';
 import { choose, comment, join, map, range, when, wrap } from '#util';
-import { check, type Problem } from '#check';
+import { check, type Finding, type Problem } from '#check';
 
 const PRESETS = [
   {
@@ -72,8 +72,29 @@ const SCOPE = { html, attrs, cx, raw, isHtml, join, map, range, when, choose, wr
 const NAMES = Object.keys(SCOPE);
 const VALUES = Object.values(SCOPE);
 
+const errorHref = (code: number) => withBase(`/reference/errors#e${code}`);
+
+// One line of the check result. A markup problem links to its code in the error reference; an
+// accessibility finding has a rule name instead of a code, and links to the table of rules.
+interface Entry {
+  label: string;
+  href: string;
+  title: string;
+  message: string;
+  near: string;
+}
+
+const entry = (p: Problem | Finding): Entry => {
+  const { message, near } = p;
+  if ('rule' in p) {
+    const href = withBase('/api/check#accessibility');
+    return { label: p.rule, href, title: `${p.rule} in the accessibility rules`, message, near };
+  }
+  return { label: `${p.code}`, href: errorHref(p.code), title: `Code ${p.code} in the error reference`, message, near };
+};
+
 type Outcome =
-  | { kind: 'markup'; markup: string; problems: Problem[] }
+  | { kind: 'markup'; markup: string; problems: Entry[] }
   | { kind: 'error'; code?: number; message: string }
   | { kind: 'empty'; message: string };
 
@@ -104,7 +125,7 @@ const result = computed<Outcome>(() => {
 
   if (value === undefined) return { kind: 'empty', message: 'Nothing was returned. Add a return.' };
   const markup = String(value);
-  return { kind: 'markup', markup, problems: check(markup) };
+  return { kind: 'markup', markup, problems: check(markup).map(entry) };
 });
 
 const status = computed(() => {
@@ -112,8 +133,6 @@ const status = computed(() => {
   const n = result.value.problems.length;
   return n === 0 ? 'No problems' : n === 1 ? '1 problem' : `${n} problems`;
 });
-
-const errorHref = (code: number) => withBase(`/reference/errors#e${code}`);
 
 // The preview goes in a shadow root. Page CSS cannot cross the boundary, so the
 // markup renders on the browser's own stylesheet instead of picking up .vp-doc,
@@ -217,12 +236,8 @@ watchPostEffect(() => {
               <ul class="pg-problems">
                 <li v-for="(problem, i) in result.problems" :key="i" class="pg-problem">
                   <div class="pg-problem-line">
-                    <a
-                      class="pg-code"
-                      :href="errorHref(problem.code)"
-                      :title="`Code ${problem.code} in the error reference`"
-                    >
-                      {{ problem.code }}
+                    <a class="pg-code" :href="problem.href" :title="problem.title">
+                      {{ problem.label }}
                     </a>
                     <span>{{ problem.message }}</span>
                   </div>

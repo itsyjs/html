@@ -82,7 +82,7 @@ Minified and brotli-compressed, with the listed imports and nothing else.
 | ------------------- | -------------------------- | ----------- | ----------- |
 | `@itsy/html`        | `html`, `attrs`, `raw`     | **1.73 kB** | 4.16 kB     |
 | `@itsy/html/attrs`  | `attrs`, `cx`              | **929 B**   | —           |
-| `@itsy/html/check`  | `check`                    | **28 B**    | 5.41 kB     |
+| `@itsy/html/check`  | `check`                    | **28 B**    | 5.45 kB     |
 | `@itsy/html/frame`  | `frame`, `head`, `element` | **2.54 kB** | 4.96 kB     |
 | `@itsy/html/util`   | all seven helpers          | **1.18 kB** | —           |
 | `@itsy/html/create` | `createHtml`               | **1.77 kB** | —           |

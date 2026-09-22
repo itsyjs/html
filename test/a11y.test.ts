@@ -279,6 +279,14 @@ suite('a11y rules: regressions', () => {
     assert.deepEqual(found('<h2>1 <3 2</h2>'), []);
     assert.deepEqual(found('<button>< </button>'), []);
   });
+  test('an end tag with no name is not text: the browser makes it a comment, or drops it', () => {
+    assert.deepEqual(found('<button></ x></button>'), ['empty-button']);
+    assert.deepEqual(found('<button></></button>'), ['empty-button']);
+  });
+  test('a repeated attribute is judged by its first value, the one the browser keeps', () => {
+    assert.deepEqual(found('<img src="a" alt="" alt="photo.png">'), []);
+    assert.deepEqual(found('<img src="a" alt="photo.png" alt="">'), ['img-alt-filename']);
+  });
 });
 
 suite('turning rules off', () => {
@@ -363,6 +371,15 @@ suite('role rules', () => {
     assert.deepEqual(found('<article><h2>t</h2><aside role="complementary">x</aside></article>'), []);
     assert.deepEqual(found('<a role="link">y</a>'), []); // no href, so no implicit link to be redundant with
     assert.deepEqual(found('<input type="text" role="textbox">'), []);
+    // An <option> is an option only in a <select> or a <datalist>. Anywhere else the role is news.
+    assert.deepEqual(
+      found('<div role="listbox" aria-label="x"><option role="option" aria-selected="false">A</option></div>'),
+      [],
+    );
+  });
+  test('role-redundant: <html> is not a document', () => {
+    // Its role is generic, like a <div>'s: the document role belongs to the page, not the element.
+    assert.deepEqual(found('<html lang="en" role="document"><body>x</body></html>'), []);
   });
   test('role-redundant: a list may restate its role', () => {
     // Safari drops the list role from a list styled `list-style: none`, and role="list" is how you
@@ -385,6 +402,8 @@ suite('role rules', () => {
       [],
     );
     assert.deepEqual(found('<table><tfoot role="rowgroup"><tr><td>x</td></tr></tfoot></table>'), []);
+    // The documented fix restates the caption's role along with the rest.
+    assert.deepEqual(found('<table role="table"><caption role="caption">Sales</caption></table>'), []);
     // The rest of the role check still applies to them.
     assert.deepEqual(found('<table role="tabel"><tbody><tr><td>x</td></tr></tbody></table>'), ['role-unknown']);
   });
@@ -396,6 +415,11 @@ suite('role rules', () => {
     assert.deepEqual(found('<select size="4" role="listbox"><option>a</option></select>'), ['role-redundant']);
     assert.deepEqual(found('<select size="1" role="listbox"><option>a</option></select>'), []);
     assert.deepEqual(found('<select role="listbox"><option>a</option></select>'), []);
+    // `size` reads as the browser reads it, not as Number() does: `2px` is two rows, `1e3` is one.
+    assert.deepEqual(found('<select size="2px" role="listbox"><option>a</option></select>'), ['role-redundant']);
+    assert.deepEqual(found('<select size="2px" role="combobox" aria-expanded="false"><option>a</option></select>'), []);
+    assert.deepEqual(found('<select size="1e3" role="combobox"><option>a</option></select>'), ['role-redundant']);
+    assert.deepEqual(found('<select size="1e3" role="listbox"><option>a</option></select>'), []);
   });
   test('role-required-props: a role with no state to read', () => {
     assert.deepEqual(found('<div role="checkbox" aria-label="x">y</div>'), ['role-required-props']);
@@ -404,6 +428,8 @@ suite('role rules', () => {
     assert.deepEqual(found('<div role="slider" aria-valuenow="3" aria-label="x">y</div>'), []);
     assert.deepEqual(found('<div role="heading">x</div>'), ['role-required-props']);
     assert.deepEqual(found('<div role="heading" aria-level="2">x</div>'), []);
+    // A heading has a level to fall back on, so its message says which, not that there is none.
+    assert.match(check('<div role="heading">x</div>')[0]!.message, /as level 2/);
     assert.deepEqual(found('<div role="meter" aria-label="Disk">x</div>'), ['role-required-props']);
     assert.deepEqual(found('<div role="meter" aria-valuenow="7" aria-label="Disk">x</div>'), []);
     assert.deepEqual(found('<meter role="meter">7</meter>'), ['role-redundant']); // has a value of its own
@@ -414,6 +440,9 @@ suite('role rules', () => {
     // Given its own role back, an element reports its own state. That is role-redundant's business.
     assert.deepEqual(found('<input type="checkbox" role="checkbox">'), ['role-redundant']);
     assert.deepEqual(found('<input type="range" role="slider">'), ['role-redundant']);
+    // A type with spaces round it is no type the browser knows, so this is a text input, and a text
+    // input given the checkbox role owes it its state.
+    assert.deepEqual(found('<input type=" checkbox " role="checkbox">'), ['role-required-props']);
     // Given another role, a checkbox or radio button still reports its checkedness, and ARIA in HTML
     // forbids aria-checked on one. This is the native switch.
     assert.deepEqual(found('<input type="checkbox" role="switch">'), []);

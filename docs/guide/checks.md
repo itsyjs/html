@@ -2,12 +2,12 @@
 
 This page details how to use checks that are included for accessibility, security, and avoiding typos that would cause unintended HTML.
 
-| check                        | fires                                               | build                                | setup                         |
-| ---------------------------- | --------------------------------------------------- | ------------------------------------ | ----------------------------- |
-| renderer refusals, codes 2-7 | first render of a template, throws `HtmlError`      | both                                 | none                          |
-| markup check, codes 8–14     | first render of a template, throws `HtmlError`      | development only                     | resolve the development build |
-| `check()`, codes 8–16 and 19 | when called on a rendered page, returns `Problem[]` | development only, `[]` in production | `@itsy/html/check`            |
-| accessibility rules          | inside `check()`, returns `Finding[]` by rule name  | development only, on by default      | none                          |
+| check                        | fires                                                    | build                                | setup                         |
+| ---------------------------- | -------------------------------------------------------- | ------------------------------------ | ----------------------------- |
+| renderer refusals, codes 2-7 | first render of a template, throws `HtmlError`           | both                                 | none                          |
+| markup check, codes 8–14     | first render of a template, throws `HtmlError`           | development only                     | resolve the development build |
+| `check()`, codes 8–16 and 19 | when called on a rendered page, a `Problem` for each     | development only, `[]` in production | `@itsy/html/check`            |
+| accessibility rules          | inside `check()`, a `Finding` for each, in the same list | development only, on by default      | none                          |
 
 `HtmlError.code` is the same in both builds; production's message is `E` plus the code. Bundlers pick the development build with the `development` condition — [bundlers and editors](/recipes/tooling).
 

@@ -79,6 +79,11 @@ suite('template audit: what the parser would repair', () => {
     assert.throws(() => html`<option value="1">`, { code: 9 });
     assert.throws(() => html`<div><p>x</div>`, { code: 10 });
   });
+  test('an end tag with no name is a comment to the browser, and to the audit', () => {
+    // `</ b` opens a comment that runs to the next `>`, so it swallows the `</p>`: the <p> stays open.
+    assert.throws(() => html`<p>a </ b</p>`, { code: 9, message: /`<p>` is never closed/ });
+    assert.doesNotThrow(() => html`<p>a</>b</p>`); // `</>` is dropped, and nothing else goes with it
+  });
   test('a deliberately unmatched tag goes through raw()', () => {
     assert.doesNotThrow(() => html`${raw('<div class="wrapper">')}<p>x</p>`);
     assert.doesNotThrow(() => html`<p>x</p>${raw('</div>')}`);
@@ -108,6 +113,9 @@ suite('check(): the output validator', () => {
     assert.match(check('<i id="a"></i><b aria-labelledby="a b"></b>')[0]!.message, /aria-labelledby="b"/);
     assert.deepEqual(codes('<i id="a"></i><i id="a"></i>'), [16]);
     assert.deepEqual(check('<label for="a">x</label>', { ids: false }), []);
+    // A repeated id attribute is 14, not 16 as well: the browser keeps the first, so there is one id.
+    assert.deepEqual(codes('<i id="a" id="a"></i>'), [14]);
+    assert.deepEqual(codes('<input id="a" id="b"><label for="b">x</label>'), [14, 15]); // and b is nowhere
   });
   test('19: a URL the guard blocked, through a template, attrs() and raw()', () => {
     assert.deepEqual(codes(html`<a href="${'javascript:x'}">y</a>`), [19]);
@@ -197,6 +205,10 @@ suite('the visitor a rule set is handed', () => {
   });
   test('close reports where the element started', () => {
     assert.deepEqual(trace('<section><i>x</i></section>').slice(2), ['close i@9 true', 'close section@0 true', 'end ']);
+  });
+  test('a repeated attribute is handed on with its first value, the one the browser keeps', () => {
+    assert.deepEqual(trace('<img alt="" alt="x">')[0], 'open img@0 [] {alt=}');
+    assert.deepEqual(trace('<i id="a" id="b"></i>').at(-1), 'end a');
   });
   test('ancestors are a copy, so a rule set can keep them', () => {
     const kept: (readonly string[])[] = [];
@@ -304,6 +316,16 @@ suite('the text hook', () => {
     assert.deepEqual(texts('<p>1 <3 2</p>'), [['1 <3 2', 3]]);
     assert.deepEqual(texts('<p><</p>'), [['<', 3]]);
     assert.deepEqual(texts('a <'), [['a <', 0]]);
+    assert.deepEqual(texts('a </'), [['a </', 0]]); // at the very end, even `</` is text
+    // An end tag with no name is not text: the browser makes `</ x>` a comment and drops `</>`.
+    assert.deepEqual(texts('<p>a</ x>b</p>'), [
+      ['a', 3],
+      ['b', 9],
+    ]);
+    assert.deepEqual(texts('<p>a</>b</p>'), [
+      ['a', 3],
+      ['b', 7],
+    ]);
     // A comment still ends a run, and so does anything that does open a tag.
     assert.deepEqual(texts('<p>a<!-- c -->b <i>c</i></p>'), [
       ['a', 3],
@@ -360,8 +382,8 @@ suite('rule sets compose', () => {
 
 suite('check(): options a JavaScript caller can send', () => {
   // `null` is outside the types, so it cannot be a type error, and it must not be a throw either.
-  // It reads as `false` wherever it lands: the accessibility rules off, no rules of your own, the
-  // id checks off.
+  // In place of the options it leaves them all out. Inside them it reads as `false` wherever it
+  // lands: the accessibility rules off, no rules of your own, the id checks off.
   const nul = null as unknown as undefined;
   const page = '<img src="a"><label for="x">y</label>';
   const tags = (r: ReturnType<typeof check>) => r.map((p) => ('rule' in p ? p.rule : p.code));

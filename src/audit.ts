@@ -162,9 +162,9 @@ const IDREFS = new Set(
 );
 
 const WS = /\s/;
-// Where markup starts: `<` before a letter, `!` or `?`, or `</` before a letter. The browser reads
-// any other `<` as text, and so does the audit.
-const MARKUP = /<[a-z!?]|<\/[a-z]/gi;
+// Where markup starts: `<` before a letter, `!` or `?`, or `</` before anything at all. The
+// browser reads any other `<` as text, and so does the audit.
+const MARKUP = /<[a-z!?]|<\/./gis;
 // What the URL guard renders in place of a blocked URL. Kept in step with `safeUrl` in shared.ts.
 const BLOCKED = 'about:blank#blocked';
 
@@ -337,15 +337,16 @@ export const audit = (
       i = e < 0 ? n : e + 3;
       continue;
     }
-    if (text[i + 1] === '!' || text[i + 1] === '?') {
-      // <!doctype> and the like: skip to the `>`.
+    const closing = text[i + 1] === '/';
+    if (text[i + 1] === '!' || text[i + 1] === '?' || (closing && !/[a-z]/i.test(text[i + 2]!))) {
+      // <!doctype> and the like, or an end tag with no name: the browser makes `</ x>` a comment
+      // and drops `</>` altogether. Either way, skip to the `>`.
       const e = text.indexOf('>', i);
       i = e < 0 ? n : e + 1;
       continue;
     }
-    const closing = text[i + 1] === '/';
     let j = i + (closing ? 2 : 1);
-    // Read the tag name. MARKUP matched, so it starts with a letter.
+    // Read the tag name. Everything that reaches here starts with a letter.
     const nameStart = j;
     while (j < n && !/[\s/>]/.test(text[j]!)) j++;
     const name = lower.slice(nameStart, j);
@@ -382,9 +383,12 @@ export const audit = (
         if (/["']/.test(attr)) {
           problem(8, at, `a quote inside the attribute name \`${text.slice(j, k)}\` on \`<${name}>\`: missing \`=\`?`);
         }
-        if (seen.has(attr)) problem(14, at, `\`${attr}\` appears twice on \`<${name}>\`: the browser keeps the first`);
+        // The browser keeps the first of a repeated attribute and drops the rest, so a repeat is
+        // reported and read no further: a rule set never sees it, and its id counts for nothing.
+        const repeat = seen.has(attr);
+        if (repeat) problem(14, at, `\`${attr}\` appears twice on \`<${name}>\`: the browser keeps the first`);
         seen.add(attr);
-        if (visit) attrMap.set(attr, '');
+        if (visit && !repeat) attrMap.set(attr, '');
         j = k;
         while (j < n && WS.test(text[j]!)) j++;
         if (text[j] === '=') {
@@ -404,12 +408,12 @@ export const audit = (
             value = text.slice(j, e);
             j = e;
           }
-          if (visit) attrMap.set(attr, value);
+          if (visit && !repeat) attrMap.set(attr, value);
           // A URL the guard replaced. Only a rendered page can have one, so only `check()` reports it.
           if (page && value === BLOCKED)
             problem(19, at, `${attr}="${BLOCKED}": the URL guard blocked this value's scheme`);
           // Remember ids and id references for the check at the end.
-          if ((ids || visit) && !closing && !value.includes(EXPRESSION)) {
+          if (!repeat && (ids || visit) && !closing && !value.includes(EXPRESSION)) {
             if (attr === 'id') {
               if (idAt.has(value)) {
                 if (ids) problem(16, at, `id "${value}" is used twice`);

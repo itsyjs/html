@@ -182,12 +182,12 @@ cannot be sure:
 - A name from `aria-label`, `aria-labelledby` or `title`, on the element or on anything inside it,
   counts as text. `<button><img src="i.svg" alt="Delete"></button>` is silent.
 - The role tables hold only the mappings the markup settles on its own. `<header role="banner">`,
-  `<aside role="complementary">` and `<li role="listitem">` depend on an ancestor, so none of them
-  is reported as redundant.
-- Nor is `<ul role="list">`, or `role="table"`, `role="rowgroup"` and `role="row"` on the table
-  elements that already have them. Safari drops the list role from a list styled
-  `list-style: none`, browsers have dropped the table roles from a table given another `display`,
-  and restating the role is how you put it back.
+  `<aside role="complementary">`, `<li role="listitem">` and `<option role="option">` depend on an
+  ancestor, so none of them is reported as redundant.
+- Nor is `<ul role="list">`, or `role="table"`, `role="caption"`, `role="rowgroup"` and
+  `role="row"` on the table elements that already have them. Safari drops the list role from a
+  list styled `list-style: none`, browsers have dropped the table roles from a table given another
+  `display`, and restating the role is how you put it back.
 - An `<input>` keeps its own state whatever role it is given. `<input type="checkbox" role="switch">`
   is the native switch, and needs no `aria-checked` — ARIA in HTML forbids one. A text input with
   a `list` is a combobox already, and needs no `aria-expanded`.

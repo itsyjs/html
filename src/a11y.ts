@@ -56,6 +56,9 @@ const HEADING = /^h[1-6]$/;
 const AHEAD = /^\s*\+?0*[1-9]/;
 // Any tabindex the browser reads as zero or more, which is what puts an element in the tab order.
 const INTAB = /^\s*\+?\d/;
+// A `<select size>` the browser reads as more than one row. Its integers, not `Number()`'s: `2px`
+// is 2 and `1e3` is 1.
+const ROWS = /^\s*\+?0*(?:[2-9]|[1-9]\d)/;
 // An alt that is the file it came from: "IMG_1024.JPG", "photo-3.png", "dsc00042".
 const FILENAME = /^\s*(\S+\.(jpe?g|png|gif|svg|webp|avif|bmp)|(img|dsc|image|photo|screenshot)[-_]?\d+)\s*$/i;
 
@@ -89,19 +92,20 @@ const REQUIRED: Record<string, string> = {
 };
 
 // The role an element already carries, for the roles that the tag settles on its own. `<aside>`,
-// `<header>`, `<footer>`, `<section>`, `<li>`, `<td>` and `<th>` all depend on an ancestor, so
-// they are left out: a wrong "redundant" is a rule nobody keeps on. Left out too, though their
-// role never changes, are the elements CSS can take it from, because restating it is how you put
-// it back: Safari drops the list role from a `<ul>`, `<ol>` or `<menu>` styled `list-style: none`,
-// and a `<table>`, `<thead>`, `<tbody>`, `<tfoot>` or `<tr>` given another `display` has lost its
-// role in Chrome and Safari both, which is why every responsive table restates them. The tags
-// whose own attributes settle it — `<a>`, `<input>`, `<select>` — are handled in `implicitRole`
-// below.
+// `<header>`, `<footer>`, `<li>`, `<td>`, `<th>` and `<option>` depend on an ancestor, and
+// `<section>` on having a name, so they are left out: a wrong "redundant" is a rule nobody keeps
+// on. Left out too, though their role never changes, are the elements CSS can take it from,
+// because restating it is how you put it back: Safari drops the list role from a `<ul>`, `<ol>` or
+// `<menu>` styled `list-style: none`, and a `<table>`, `<thead>`, `<tbody>`, `<tfoot>` or `<tr>`
+// given another `display` has lost its role in Chrome and Safari both, which is why every
+// responsive table restates them — its `<caption>` included, so that is left out as well. `<html>`
+// is not here because its role is `generic`, like a `<div>`'s: the document role belongs to the
+// page, not to the element. The tags whose own attributes settle it — `<a>`, `<input>`, `<select>`
+// — are handled in `implicitRole` below.
 const IMPLICIT: Record<string, string> = {
   article: 'article',
   blockquote: 'blockquote',
   button: 'button',
-  caption: 'caption',
   code: 'code',
   datalist: 'listbox',
   del: 'deletion',
@@ -113,14 +117,12 @@ const IMPLICIT: Record<string, string> = {
   figure: 'figure',
   form: 'form',
   hr: 'separator',
-  html: 'document',
   ins: 'insertion',
   main: 'main',
   math: 'math',
   meter: 'meter',
   nav: 'navigation',
   optgroup: 'group',
-  option: 'option',
   output: 'status',
   p: 'paragraph',
   progress: 'progressbar',
@@ -155,12 +157,14 @@ const NATIVE: Record<string, string> = {
   range: 'aria-valuenow',
 };
 
-/** An `<input>`'s type, as the browser reads it. */
-const inputType = (a: Attrs) => (a.get('type') ?? '').trim().toLowerCase();
+/** An `<input>`'s type, as the browser reads it: any case, but no trimming, so `" checkbox"` is text. */
+const inputType = (a: Attrs) => (a.get('type') ?? '').toLowerCase();
 
 /**
  * The state an `<input>` reports for itself, whatever role it is given. A text input with a `list`
  * is a combobox already, showing and hiding its own suggestions, so it has `aria-expanded` covered.
+ * That goes by the `list` alone, whatever the type: telling apart the types that ignore it is not
+ * worth a false positive, so a button with a `list` is let off too.
  */
 const nativeState = (a: Attrs): string | undefined =>
   NATIVE[inputType(a)] ?? (a.has('list') ? 'aria-expanded' : undefined);
@@ -173,7 +177,7 @@ const implicitRole = (tag: string, a: Attrs): string | undefined => {
   // A `<select>` is a listbox when it shows more than one row, and a combobox otherwise. Both are
   // settled here, and both matter: without this, `<select role="combobox">` is reported as
   // missing the `aria-expanded` that the element reports for itself.
-  if (tag === 'select') return a.has('multiple') || Number(a.get('size')) > 1 ? 'listbox' : 'combobox';
+  if (tag === 'select') return a.has('multiple') || ROWS.test(a.get('size') ?? '') ? 'listbox' : 'combobox';
   return IMPLICIT[tag];
 };
 
@@ -219,36 +223,38 @@ const checkRole = (report: A11yReport, tag: string, a: Attrs, at: number) => {
     .toLowerCase()
     .split(/\s+/)
     .find((t) => ROLES.has(t) || outside(t));
-  if (known && outside(known)) return;
   if (!known) {
-    report(
+    return report(
       'role-unknown',
       `\`role="${role}"\` is not an ARIA role: the browser ignores it, so \`<${tag}>\` keeps the role it already had`,
       at,
     );
-  } else if (known === implicitRole(tag, a)) {
-    report(
+  }
+  if (outside(known)) return;
+  if (known === implicitRole(tag, a)) {
+    return report(
       'role-redundant',
       `\`<${tag} role="${known}">\`: \`<${tag}>\` is already a \`${known}\`, so the attribute says nothing the browser did not know`,
       at,
     );
-  } else if ((known === 'presentation' || known === 'none') && focusable(tag, a)) {
-    report(
+  }
+  if ((known === 'presentation' || known === 'none') && focusable(tag, a)) {
+    return report(
       'role-presentation-interactive',
       `\`<${tag} role="${known}">\` can still be tabbed to: the browser drops a presentational role from anything focusable, so this does nothing`,
       at,
     );
-  } else {
-    // The state the role is read with, unless the element supplies it: one that already had the
-    // role reports its own (the branch above), and so does an `<input>` with the state built in.
-    const need = REQUIRED[known];
-    if (need && !a.has(need) && !(tag === 'input' && nativeState(a) === need)) {
-      report(
-        'role-required-props',
-        `\`role="${known}"\` has no \`${need}\`: a screen reader announces the role and then has no state to read`,
-        at,
-      );
-    }
+  }
+  // The state the role is read with, unless the element supplies it: one that already had the
+  // role reports its own (the return above), and so does an `<input>` with the state built in.
+  const need = REQUIRED[known];
+  if (need && !a.has(need) && !(tag === 'input' && nativeState(a) === need)) {
+    // A heading is the one with something to fall back on: browsers read it as level 2.
+    const outcome =
+      known === 'heading'
+        ? 'a screen reader announces it as level 2, whatever level it is'
+        : 'a screen reader announces the role and then has no state to read';
+    report('role-required-props', `\`role="${known}"\` has no \`${need}\`: ${outcome}`, at);
   }
 };
 

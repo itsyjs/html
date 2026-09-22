@@ -78,7 +78,7 @@ works as-is. See [what it does not do](/security/limits#content-security-policy)
 import { check } from '@itsy/html/check';
 
 if (process.env.NODE_ENV !== 'production') {
-  for (const p of check(view)) console.warn(`[html ${p.code}] ${p.message}`, p.near);
+  for (const p of check(view)) console.warn(`[${'rule' in p ? p.rule : `html ${p.code}`}] ${p.message}`, p.near);
 }
 ```
 
