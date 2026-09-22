@@ -1,6 +1,6 @@
 {
   "name": "@itsy/html",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "tiny isomorphic HTML renderer — tagged templates in, escaped strings out; context-aware escaping, URL scheme guard, one attribute helper, no hydration",
   "keywords": [
     "escape",
