@@ -1,5 +1,5 @@
 import { auditTemplate } from './audit.ts';
-import { Html, HtmlError, REFUSED, SCHEMES, URL_ATTRS, esc, safeUrl } from './shared.ts';
+import { BRAND, Html, HtmlError, REFUSED, SCHEMES, URL_ATTRS, esc, safeUrl } from './shared.ts';
 
 /**
  * What can go in an interpolation `${…}`: text, numbers, `Html`, lists of these, or a function that returns one of these.
@@ -177,8 +177,9 @@ const render = (value: Renderable, ctx: Context, schemes: ReadonlySet<string>, i
   if (typeof value === 'string' && ctx.only === undefined) return ctx.url ? safeUrl(value, schemes) : esc(value);
   if (typeof value === 'function') return render(value(), ctx, schemes, i); // call it, render what comes back
   if (value == null || value === false) return '';
-  // Already HTML: never escaped again. In a URL attribute it still gets the scheme check.
-  if (value instanceof Html) return ctx.url ? safeUrl(String(value), schemes, trusted) : String(value);
+  // Already HTML, no need to escape - scheme-check a url attribute though
+  // Read through the brand slot when it's a true Html
+  if (value instanceof Html) return ctx.url ? safeUrl(value[BRAND], schemes, trusted) : value[BRAND];
   if (typeof value === 'object' && typeof value[Symbol.iterator] === 'function') {
     // A list: render each item in this same context, one after the other.
     let out = '';

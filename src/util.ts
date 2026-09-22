@@ -108,7 +108,7 @@ export const wrap = (
   attributes?: Record<string, AttrValue>,
 ): Renderable[] => {
   if (!TAG.test(tag)) throw new HtmlError(17, __DEV__ && `bad tag name "${tag}"`);
-  const open = raw(`<${tag}${attributes ? ` ${String(attrs(attributes))}` : ''}>`);
+  const open = raw(`<${tag}${attributes ? ` ${attrs(attributes).markup}` : ''}>`);
   const close = raw(`</${tag}>`);
   return map(items, (item) => [open, item, close]);
 };

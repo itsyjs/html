@@ -1,4 +1,4 @@
-import { few, hostile, items, nav, one } from '../fixtures.js';
+import { attrsOf, few, hostile, items, nav, one } from '../fixtures.js';
 
 // Two reference points, not libraries.
 //
@@ -31,6 +31,27 @@ const esc = (s) => {
   return out + s.slice(last);
 };
 
+// Attributes from an object, written by hand: no scanner, no URL guard, and the tri-state
+// rule spelled out rather than derived from a set. This is the floor the `attrs` case is
+// measured against — the only helper in this file that @itsy/html's attrs() has to beat.
+//
+// It handles exactly what attrsOf() produces, not the general rule: `aria-*` only, where
+// attrs() also treats draggable, spellcheck and contenteditable as tri-state. Widen the
+// fixture and this needs widening with it, which verify() will say so loudly.
+const TRI = /^aria-/;
+const buildAttrs = (o) => {
+  let out = '';
+  for (const k in o) {
+    const v = o[k];
+    if (v == null) continue;
+    if (typeof v === 'boolean') {
+      if (TRI.test(k)) out += ` ${k}="${v}"`; // aria-* writes "false" out; absent means something else
+      else if (v) out += ` ${k}`; // a bare attribute, or nothing at all
+    } else out += ` ${k}="${esc(String(v))}"`;
+  }
+  return out;
+};
+
 const Link = (i) => `<a href="${esc(i.href)}" class="link ${i.featured ? 'is-featured' : ''}">${esc(i.name)}</a>`;
 
 const Row = (i) =>
@@ -48,6 +69,7 @@ export const escaped = {
   escape: () => `<p>${esc(hostile)}</p>`,
   page: () =>
     `<main><h1>Catalogue</h1>${nav.map(Group).join('')}<ol>${few.map((i) => `<li>${Link(i)}</li>`).join('')}</ol></main>`,
+  attrs: () => `<ul>${few.map((i) => `<li><a${buildAttrs(attrsOf(i))}>${esc(i.name)}</a></li>`).join('')}</ul>`,
 };
 
 const RawLink = (i) => `<a href="${i.href}" class="link ${i.featured ? 'is-featured' : ''}">${i.name}</a>`;

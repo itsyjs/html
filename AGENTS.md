@@ -22,7 +22,7 @@ those for exact types. This file is the task-oriented map.
 import { html, attrs, raw } from '@itsy/html';
 import { join, wrap } from '@itsy/html/util';
 
-html`<a href="${url}" class="lenke ${active && 'aktiv'}">${label}</a>`; // → Html (a String subclass)
+html`<a href="${url}" class="lenke ${active && 'aktiv'}">${label}</a>`; // → Html (a wrapper: `.markup` or `String()` gives the string)
 html`<ul>${items.map((i) => html`<li>${i.name}</li>`)}</ul>`; // arrays / iterables flatten
 html`<input ${attrs({ type: 'text', disabled: busy, class: ['a', cond && 'b'] })}>`; // dynamic attributes
 html`<button ${attrs({ aria: { expanded: open, controls: id }, data: { kategori } })}>`; // aria-expanded="false" data-kategori="…"
@@ -55,7 +55,8 @@ String(view) / el.innerHTML = view / res.send(String(view)); // Html coerces eve
 - A template that is only `<div>` throws 9 in dev, and one that is only `<my-el />` throws 11: fragments must balance, and only void elements self-close. `raw('<div>')` is the deliberate-fragment hatch.
 - `src/audit.ts` is dev-only and tree-shaken out of prod. It never influences escaping; it only adds errors. Don't fold it into the scanner in `html.ts`.
 - `attrs({ 'aria-expanded': open })` renders `aria-expanded="false"` when closed; `attrs({ 'data-open': open })` renders nothing. Different attributes, different rules, on purpose.
-- Building: `tsdown` runs two configs (`dist/index.js` with `__DEV__=false`, `dist/index.dev.js` with `__DEV__=true`). Tests run the unbundled source with `--import ./test/setup.ts`, which defines `__DEV__ = true`. Any `throw new HtmlError(code, __DEV__ && `…`)` keeps its prose out of prod.
+- Building: `tsdown` runs two configs (`dist/index.js` with `__DEV__=false`, `dist/index.dev.js` with `__DEV__=true`). Any `throw new HtmlError(code, __DEV__ && `…`)` keeps its prose out of prod.
+- Testing: `pnpm test` runs the unbundled source with `--import ./test/setup.ts`, which defines `__DEV__ = true`; it needs no build. The tests that assert against `dist/` live in `test/built/` and run from `postbuild`, so `pnpm build` verifies its own output and `pnpm check` picks them up through `check:build`. They throw rather than skip when `dist/` is missing — a skip there reports success having tested nothing.
 - Do not build markup by concatenation and `raw()` it. Put the expression in the template; escaping depends on the context.
 - `createHtml(opts)` from `@itsy/html/create` returns an isolated `{ html, attrs }` with its own cache and schemes. Create at module scope, once per page; `frame` and `wrap()` keep the defaults.
 - Templates are cached by their `TemplateStringsArray` — never fabricate one; always write the literal.

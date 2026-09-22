@@ -23,3 +23,23 @@ export const nav = [
   { title: 'Catalogue', links: few.slice(0, 5) },
   { title: 'Offers', links: few.slice(5, 10) },
 ];
+
+/**
+ * The attribute set for the `attrs` case: the object each renderer turns into attributes
+ * with whatever mechanism it has.
+ *
+ * Chosen so @itsy/html, htm + preact and the hand-written baseline can agree byte for
+ * byte. `class` is pre-joined, because preact renders an array as `class="a,b"`; no value
+ * is the empty string, which preact would render as a bare attribute; no value holds `>`
+ * or `'`, neither of which preact's escaper touches; and `href` is relative, so the URL
+ * guard never rewrites it. `few` holds both featured and ordinary items, so the boolean
+ * pair below is exercised each way: one of them is always written out, the other omitted.
+ */
+export const attrsOf = (i) => ({
+  class: i.featured ? 'link is-featured' : 'link',
+  'data-id': String(i.id),
+  href: i.href,
+  title: i.name,
+  'aria-current': i.featured,
+  hidden: !i.featured,
+});

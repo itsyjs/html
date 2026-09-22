@@ -7,16 +7,25 @@ import type * as Frame from '#frame';
 import type * as Util from '#util';
 import type * as Create from '#create';
 
-// Runs against dist/, so it needs `pnpm build` first; `pnpm check` builds before testing.
-const dist = new URL('../dist/', import.meta.url);
+// Runs against dist/, so it only ever runs after a build: `pnpm build` runs it through
+// `postbuild`, and `pnpm check` reaches it through `check:build`. It sits in its own directory
+// because `pnpm test` globs `test/*.test.ts`, which does not recurse — so the normal suite stays
+// a fast inner loop that needs no build, and this file cannot rejoin it by accident.
+const dist = new URL('../../dist/', import.meta.url);
 const built = existsSync(new URL('index.js', dist)) && existsSync(new URL('index.dev.js', dist));
+
+// Deliberately not a `skip`. A missing dist/ means the invocation was wrong, and skipping would
+// report success having tested nothing — which is exactly what this file used to do, and the
+// reason it was moved out of the normal suite.
+if (!built) throw new Error('dist/ is missing — run `pnpm build`, which runs these via postbuild');
+
 const load = (file: string) => import(new URL(file, dist).href) as Promise<typeof Lib>;
 const loadCheck = (file: string) => import(new URL(file, dist).href) as Promise<typeof Check>;
 const loadFrame = (file: string) => import(new URL(file, dist).href) as Promise<typeof Frame>;
 const loadUtil = (file: string) => import(new URL(file, dist).href) as Promise<typeof Util>;
 const loadCreate = (file: string) => import(new URL(file, dist).href) as Promise<typeof Create>;
 
-suite('built output', { skip: !built && 'run pnpm build first' }, () => {
+suite('built output', () => {
   test('prod and dev builds render the same string', async () => {
     const prod = await load('index.js');
     const dev = await load('index.dev.js');
@@ -24,6 +33,18 @@ suite('built output', { skip: !built && 'run pnpm build first' }, () => {
       String(m.html`<a href="${'javascript:x'}" ${m.attrs({ aria: { expanded: false } })}>${() => '<'}</a>`);
     assert.equal(view(prod), '<a href="about:blank#blocked" aria-expanded="false">&lt;</a>');
     assert.equal(view(dev), view(prod));
+  });
+  test("two copies of the library recognise each other's Html", async () => {
+    // The only place two copies exist naturally: the prod and dev builds. Without the shared
+    // brand, a nested template from the other copy would be escaped as text, silently.
+    const prod = await load('index.js');
+    const dev = await load('index.dev.js');
+    const inner = dev.html`<i>${'a&b'}</i>`;
+    assert.ok(prod.isHtml(inner) && dev.isHtml(prod.raw('<b>')));
+    assert.equal(String(prod.html`<p>${inner}</p>`), '<p><i>a&amp;b</i></p>');
+    assert.equal(String(dev.html`<p>${prod.raw('<b>')}</p>`), '<p><b></p>');
+    // …and a URL from the other copy is still scheme-checked by this one.
+    assert.equal(String(prod.html`<a href="${dev.raw('javascript:x')}"></a>`), '<a href="about:blank#blocked"></a>');
   });
   test('prod says E<code>, dev spells it out; both carry the code', async () => {
     const prod = await load('index.js');

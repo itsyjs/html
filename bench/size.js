@@ -3,30 +3,26 @@
 // Throughput is not the only cost of an SSR renderer: what it emits travels over
 // the wire on every request. lit's hydration markers are the reason it is here.
 
-import { escaped, raw } from './renderers/baseline.js';
-import ghtml from './renderers/ghtml.js';
-import hono from './renderers/hono.js';
-import itsy from './renderers/itsy.js';
-import lit from './renderers/lit.js';
-import preact from './renderers/preact.js';
+import { CASES, CASE_KEYS, baseline, contenders, verify } from './harness.js';
 
-const contenders = [itsy, hono, ghtml, preact, lit, escaped, raw];
-const cases = ['link', 'card', 'page', 'table', 'escape'];
+// Same guard as the timed entry points: byte counts for a renderer that rendered
+// nothing, or failed to escape, are worse than no byte counts at all.
+verify();
+
 const bytes = (s) => Buffer.byteLength(s, 'utf8');
-
-const baseline = Object.fromEntries(cases.map((c) => [c, bytes(itsy[c]())]));
+const want = Object.fromEntries(CASE_KEYS.map((c) => [c, bytes(baseline[c]())]));
 
 const pad = (s, n) => String(s).padEnd(n);
 const num = (s, n) => String(s).padStart(n);
 
-console.log(`\noutput bytes, and the ratio to @itsy/html\n`);
-console.log(pad('renderer', 32) + cases.map((c) => num(c, 18)).join(''));
-console.log('-'.repeat(32 + cases.length * 18));
+console.log(`\noutput bytes, and the ratio to ${baseline.name}\n`);
+console.log(pad('renderer', 32) + CASE_KEYS.map((c) => num(CASES[c], 18)).join(''));
+console.log('-'.repeat(32 + CASE_KEYS.length * 18));
 
 for (const r of contenders) {
-  const cells = cases.map((c) => {
+  const cells = CASE_KEYS.map((c) => {
     const b = bytes(r[c]());
-    const ratio = (b / baseline[c]).toFixed(2);
+    const ratio = (b / want[c]).toFixed(2);
     return num(`${b.toLocaleString('en-US')} (${ratio}x)`, 18);
   });
   console.log(pad(r.name, 32) + cells.join(''));

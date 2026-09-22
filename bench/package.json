@@ -4,10 +4,8 @@
   "description": "Not published, not part of the package. Its own install so the root stays lean.",
   "type": "module",
   "scripts": {
-    "start": "node table.js",
-    "full": "node server.js",
-    "attrs": "node attrs.js",
-    "escape": "node escape.js",
+    "start": "node --expose-gc table.js",
+    "vs": "node --expose-gc ab.js",
     "size": "node size.js"
   },
   "dependencies": {
@@ -19,7 +17,6 @@
     "lit": "^3.3.3",
     "mitata": "^1.0.34",
     "preact": "^10.29.8",
-    "preact-render-to-string": "^6.7.0",
-    "uhtml": "^5.0.9"
+    "preact-render-to-string": "^6.7.0"
   }
 }

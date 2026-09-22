@@ -4,10 +4,19 @@ Template in, escaped HTML string out, measured against four other renderers and 
 points. The suite lives in [`bench/`][bench] and you can run it yourself:
 
 ```sh
-pnpm bench       # the tables below
-pnpm bench:full  # the same measurements, with distributions and histograms
-pnpm bench:size  # bytes emitted rather than time
+pnpm bench            # the tables below
+pnpm bench:vs [rev]   # this working tree against another revision, to check a change
+pnpm bench:size       # bytes emitted rather than time
 ```
+
+Every renderer is measured in **its own process**, warmed only by itself — which is how it
+runs in production, one templating library per server.
+
+That detail is not cosmetic. A process holding all seven does not measure any of them
+honestly, and the older figures on this page were wrong in both directions because of it: they
+flattered @itsy/html, and they penalised everything else by up to 2.8x. A library's presence
+can change its neighbours — see [the note on `Html`](/api/html#html-class) for the case that
+cost every other renderer in the process nearly 3x until it was fixed.
 
 ## Relative speed
 
@@ -16,13 +25,13 @@ four and five times slower.
 
 | renderer                      | one `<a>` | one element | nested page | 1000 rows | escape-heavy | overall |
 | ----------------------------- | --------: | ----------: | ----------: | --------: | -----------: | ------: |
-| no escaping                   |      8.86 |        4.10 |        3.69 |      2.51 |       248.78 |    9.65 |
-| hand-written                  |      1.60 |        1.57 |        1.29 |      1.41 |         0.86 |    1.32 |
+| no escaping                   |      8.77 |        4.18 |        2.41 |      2.04 |       410.62 |    9.41 |
+| hand-written                  |      1.41 |        1.42 |        0.97 |      1.19 |         1.11 |    1.21 |
 | **@itsy/html**                |      1.00 |        1.00 |        1.00 |      1.00 |         1.00 |    1.00 |
-| hono/html                     |      0.82 |        0.80 |        0.77 |      0.84 |         0.85 |    0.81 |
-| ghtml                         |      0.83 |        0.90 |        0.76 |      0.81 |         0.66 |    0.79 |
-| htm + preact-render-to-string |      0.37 |        0.31 |        0.37 |      0.28 |         1.30 |    0.43 |
-| lit + @lit-labs/ssr           |      0.19 |        0.19 |        0.20 |      0.18 |         0.38 |    0.22 |
+| hono/html                     |      0.72 |        0.81 |        0.58 |      0.73 |         0.85 |    0.73 |
+| ghtml                         |      0.73 |        0.91 |        0.53 |      0.70 |         0.83 |    0.73 |
+| htm + preact-render-to-string |      0.34 |        0.32 |        0.28 |      0.26 |         1.37 |    0.41 |
+| lit + @lit-labs/ssr           |      0.16 |        0.20 |        0.15 |      0.17 |         0.46 |    0.21 |
 
 ## Time per render
 
@@ -30,13 +39,26 @@ One unit per column, so a column can be read straight down. Lower is faster.
 
 | renderer                      | one `<a>` | one element | nested page | 1000 rows | escape-heavy |
 | ----------------------------- | --------: | ----------: | ----------: | --------: | -----------: |
-| no escaping                   |   14.5 ns |     47.4 ns |     0.89 µs |   97.3 µs |      0.01 µs |
-| hand-written                  |   80.7 ns |      124 ns |     2.54 µs |    173 µs |      2.21 µs |
-| **@itsy/html**                |    129 ns |      194 ns |     3.30 µs |    244 µs |      1.91 µs |
-| hono/html                     |    157 ns |      244 ns |     4.30 µs |    291 µs |      2.25 µs |
-| ghtml                         |    156 ns |      216 ns |     4.36 µs |    303 µs |      2.89 µs |
-| htm + preact-render-to-string |    349 ns |      621 ns |     9.03 µs |    869 µs |      1.47 µs |
-| lit + @lit-labs/ssr           |    683 ns |     1025 ns |     16.8 µs |   1389 µs |      5.02 µs |
+| no escaping                   |   13.0 ns |     45.7 ns |     1.01 µs |    102 µs |      0.01 µs |
+| hand-written                  |   80.4 ns |      135 ns |     2.50 µs |    175 µs |      2.21 µs |
+| **@itsy/html**                |    114 ns |      191 ns |     2.43 µs |    208 µs |      2.45 µs |
+| hono/html                     |    158 ns |      236 ns |     4.23 µs |    287 µs |      2.89 µs |
+| ghtml                         |    156 ns |      210 ns |     4.59 µs |    297 µs |      2.95 µs |
+| htm + preact-render-to-string |    332 ns |      590 ns |     8.73 µs |    803 µs |      1.79 µs |
+| lit + @lit-labs/ssr           |    700 ns |      964 ns |     16.6 µs |   1248 µs |      5.29 µs |
+
+## Attributes from an object
+
+Ten links whose attribute names come from an object at render time rather than from the
+template — what [`attrs()`](/api/attrs) is for. Only three of the seven can do this: lit's SSR
+package cannot render an element part at all, and neither hono nor ghtml has an attribute
+mechanism, so their rows would time a string builder written here rather than the library.
+
+| renderer                      | ten links | vs hand-written |
+| ----------------------------- | --------: | --------------: |
+| **@itsy/html**                |   2.99 µs |            1.04 |
+| hand-written                  |   3.11 µs |            1.00 |
+| htm + preact-render-to-string |   6.16 µs |            0.51 |
 
 ## What the columns are
 
@@ -106,8 +128,8 @@ markers — `<!--lit-part-->` and `<!--lit-node-->` — which travel on every re
 - The production build is what runs here. The development build adds the
   [markup check](/guide/checks), which runs once per call site, not once per render.
 - Every renderer caches its analysis of a template on the strings array, so the first render of a
-  call site costs more than the rest. For @itsy/html that is about 810 ns against 129 ns.
-  `pnpm bench:full` measures both.
+  call site costs more than the rest. For @itsy/html that is about 760 ns against 121 ns.
+  `pnpm bench:vs` measures it as `cold`.
 - uhtml was meant to be here. Version 5 dropped its `/ssr` export and is browser-only, so there
   is nothing to compare on a server. @kitajs/html is left out because it is JSX and needs a
   compile step, which is a different authoring model.

@@ -35,9 +35,6 @@ importers:
       preact-render-to-string:
         specifier: ^6.7.0
         version: 6.7.0(preact@10.29.8)
-      uhtml:
-        specifier: ^5.0.9
-        version: 5.0.9
 
 packages:
 
@@ -64,12 +61,6 @@ packages:
 
   '@types/trusted-types@2.0.7':
     resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
-
-  '@webreflection/alien-signals@0.3.2':
-    resolution: {integrity: sha512-DmNjD8Kq5iM+Toirp3llS/izAiI3Dwav5nHRvKdR/YJBTgun3y4xK76rs9CFYD2bZwZJN/rP+HjEqKTteGK+Yw==}
-
-  alien-signals@2.0.8:
-    resolution: {integrity: sha512-844G1VLkk0Pe2SJjY0J8vp8ADI73IM4KliNu2OGlYzWpO28NexEUvjHTcFjFX3VXoiUtwTbHxLNI9ImkcoBqzA==}
 
   data-uri-to-buffer@4.0.1:
     resolution: {integrity: sha512-0R9ikRb668HB7QDxT1vkpuUBtqc53YyAwMwGeUFKRojY/NWKvdZ+9UYtRfGmhqNbRkTSVpMbmyhXipFFv2cb/A==}
@@ -146,9 +137,6 @@ packages:
     resolution: {integrity: sha512-uxc/zpqFg6x7C8vOE7lh6Lbda8eEL9zmVm/PLeTPBRhh1xCgdWaQ+J1CUieGpIfm2HdtsUpRv+HshiasBMcc6A==}
     engines: {node: '>=6'}
 
-  uhtml@5.0.9:
-    resolution: {integrity: sha512-qPyu3vGilaLe6zrjOCD/xezWEHLwdevxmbY3hzyhT25KBDF4F7YYW3YZcL3kylD/6dMoVISHjn8ggV3+9FY+5g==}
-
   web-streams-polyfill@3.3.3:
     resolution: {integrity: sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw==}
     engines: {node: '>= 8'}
@@ -185,12 +173,6 @@ snapshots:
       parse5: 7.3.0
 
   '@types/trusted-types@2.0.7': {}
-
-  '@webreflection/alien-signals@0.3.2':
-    dependencies:
-      alien-signals: 2.0.8
-
-  alien-signals@2.0.8: {}
 
   data-uri-to-buffer@4.0.1: {}
 
@@ -257,9 +239,5 @@ snapshots:
       preact-render-to-string: 6.7.0(preact@10.29.8)
 
   tapable@2.3.3: {}
-
-  uhtml@5.0.9:
-    dependencies:
-      '@webreflection/alien-signals': 0.3.2
 
   web-streams-polyfill@3.3.3: {}

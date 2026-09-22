@@ -81,22 +81,28 @@
   },
   "scripts": {
     "build": "tsdown && publint",
+    "postbuild": "pnpm test:built",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.src.json",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "test": "node --import ./test/setup.ts --test test/*.test.ts",
+    "test:built": "node --import ./test/setup.ts --test test/built/*.test.ts",
     "size": "size-limit",
     "size:check": "export-size .",
     "bench": "tsdown && pnpm --dir bench install --ignore-workspace && pnpm --dir bench start",
-    "bench:full": "tsdown && pnpm --dir bench install --ignore-workspace && pnpm --dir bench full",
-    "bench:attrs": "tsdown && pnpm --dir bench install --ignore-workspace && pnpm --dir bench attrs",
+    "bench:vs": "tsdown && pnpm --dir bench install --ignore-workspace && pnpm --dir bench vs",
     "bench:size": "tsdown && pnpm --dir bench install --ignore-workspace && pnpm --dir bench size",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
-    "check": "oxfmt --check && oxlint && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.src.json && tsdown && publint && node --import ./test/setup.ts --test test/*.test.ts",
+    "check": "pnpm run --no-bail --aggregate-output \"/^check:/\"",
+    "check:fmt": "oxfmt --check",
+    "check:lint": "oxlint",
+    "check:types": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.src.json",
+    "check:test": "pnpm test",
+    "check:build": "pnpm build",
     "preversion": "npm run check",
     "postversion": "git push --follow-tags"
   },
@@ -169,7 +175,7 @@
       "name": "@itsy/html/frame (dev)",
       "path": "dist/frame.dev.js",
       "import": "{ frame, head, element }",
-      "limit": "5 KB"
+      "limit": "6 KB"
     },
     {
       "name": "@itsy/html/util",
@@ -193,5 +199,5 @@
   "engines": {
     "node": ">=18.17"
   },
-  "packageManager": "pnpm@11.1.2"
+  "packageManager": "pnpm@12.5.1"
 }

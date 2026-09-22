@@ -10,8 +10,13 @@ const Row = (i) =>
 const Group = (g) =>
   html`<section><h2>${g.title}</h2><ul>!${g.links.map((l) => html`<li>!${Link(l)}</li>`)}</ul></section>`;
 
+const WHY = 'ghtml escapes to numeric entities (&#38;) and escapes `=` as well';
+
 export default {
   name: 'ghtml',
+  // ghtml escapes to numeric entities and escapes `=` as well, so any value holding one of
+  // those comes out differently. That is every case here.
+  differs: { link: WHY, card: WHY, page: WHY, table: WHY, escape: WHY },
   link: () => String(Link(one)),
   card: () =>
     String(

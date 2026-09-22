@@ -1,17 +1,24 @@
-// The contenders, the fairness guard, and a timer that gives the same answer twice.
+// The contenders, the case list, the fairness guard, and a thin wrapper over mitata.
 //
-// Timing here used to lean on an accident. `measure()` from mitata reads whatever
-// state the V8 heap happens to be in, and the first thing timed in a fresh process
-// pays for growing it: @itsy/html measured 240 ns on the link case after other work
-// had run and 440 ns when it went first, from the same build. The old table.js was
-// only stable because its verify() guard ran every renderer before any measurement
-// and warmed the heap by chance. Take the guard away and every number moves.
+// Timing used to be hand-rolled here — a batch timer, a calibration loop and a median of
+// twenty rounds — because mitata's measure() once read whatever state the V8 heap was in,
+// and whichever renderer went first paid for growing it: 240 ns against 440 ns from the
+// same build. That part is still true, and `warmup()` below is the answer to it.
 //
-// So: warm everything, calibrate everything, and only then record. Each round times
-// every renderer of a case back to back, so drift during the run hits all of them
-// together, and the published figure is the median round rather than the best one.
+// The rest of the hand-rolling was not worth keeping. measure() builds its timing loop
+// with new AsyncFunction, so every benchmark gets freshly compiled code and its own
+// monomorphic call site; the hand-rolled timer put everything through one shared `fn()`
+// that went polymorphic and could not inline the callee. That cost the fastest cases up
+// to 30% in pure overhead, and on two implementations of one small function it inverted
+// the result outright — the scanning escaper read 0.29x when the truth is 1.37x.
+// measure() is also about twice as quick over the same matrix.
+//
+// Note: importing this file imports renderers/lit.js, whose first line installs a
+// global DOM shim process-wide. Every entry point that touches the harness gets it,
+// including size.js, whether or not lit is being measured.
 
-import { do_not_optimize } from 'mitata';
+import { do_not_optimize, measure } from 'mitata';
+import { CASE_KEYS, MIN_CPU_TIME } from './spec.js';
 import { escaped, raw } from './renderers/baseline.js';
 import ghtml from './renderers/ghtml.js';
 import hono from './renderers/hono.js';
@@ -21,14 +28,45 @@ import preact from './renderers/preact.js';
 
 export const contenders = [itsy, hono, ghtml, preact, lit, escaped, raw];
 export const baseline = itsy;
-export const CASE_KEYS = ['link', 'card', 'page', 'table', 'escape'];
 
-/** Prove each renderer really rendered every row and really escaped, before any of it is timed. */
+export { ATTR_CASES, ATTR_KEYS, CASES, CASE_KEYS } from './spec.js';
+export const attrContenders = [itsy, preact, escaped];
+
+/**
+ * Prove each renderer really rendered every row, really escaped, and still agrees with
+ * @itsy/html byte for byte wherever it ever did.
+ *
+ * Not every renderer can agree: ghtml emits numeric entities and escapes `=`, lit emits
+ * its `<!--lit-part-->` markers, and preact's escaper leaves `>` and `'` alone. Those are
+ * declared per renderer in a `differs` map with a reason, and an entry that stops being
+ * true fails here too — so an exemption cannot outlive the thing it was excusing.
+ */
 export const verify = () => {
   for (const r of contenders) {
     const rows = (r.table().match(/<tr[ >]/g) ?? []).length;
     if (rows !== 1000) throw new Error(`${r.name}: rendered ${rows} rows, expected 1000`);
     if (!r.unsafe && r.escape().includes('<script>')) throw new Error(`${r.name}: left a <script> unescaped`);
+  }
+
+  for (const k of CASE_KEYS) {
+    const want = baseline[k]();
+    for (const r of contenders) {
+      if (r === baseline || r.unsafe) continue; // `raw` is here to be different
+      const why = r.differs?.[k];
+      const same = r[k]() === want;
+      if (why && same) {
+        throw new Error(`${r.name}/${k}: matches ${baseline.name} again — drop the differs entry ("${why}")`);
+      }
+      if (!why && !same) {
+        throw new Error(`${r.name}/${k}: output no longer matches ${baseline.name}, and nothing says it may`);
+      }
+    }
+  }
+
+  // The attrs case has no exemptions: its fixture was chosen so all three can agree.
+  const wantAttrs = baseline.attrs();
+  for (const r of attrContenders) {
+    if (r.attrs() !== wantAttrs) throw new Error(`${r.name}/attrs: output does not match ${baseline.name}`);
   }
 };
 
@@ -39,88 +77,67 @@ const clear = () => {
   if (process.stderr.isTTY) process.stderr.write(`\r${' '.repeat(60)}\r`);
 };
 
-// Nanoseconds per call, over a batch. do_not_optimize, or V8 sees the result is
-// unused and hoists the whole render away. One timer reading per batch, not per
-// call, so the clock's own cost is divided by `n` rather than charged to each one.
-const time = (fn, n) => {
-  const start = process.hrtime.bigint();
-  for (let i = 0; i < n; i++) do_not_optimize(fn());
-  return Number(process.hrtime.bigint() - start) / n;
-};
-
-/** Run everything a few times, so no recorded timing is the one that grows the heap. */
-export const warmup = (keys = CASE_KEYS, passes = 12) => {
+/**
+ * Run everything a few times, so no recorded timing is the one that grows the heap.
+ *
+ * measure() cannot do this for you — its own warmup is three calls behind a threshold, and
+ * raising `warmup_samples` to a million changes nothing.
+ *
+ * **Warm only the renderer you are about to measure.** Warming all of them together is not
+ * neutral: it makes @itsy/html read 1.75x faster, the hand-written baseline 2.28x, ghtml
+ * 1.44x and preact 1.29x, while hono and lit do not move at all. Running hono's code is
+ * what does it, and the effect is large enough to reverse who wins. table.js therefore
+ * measures each renderer in its own process; see the comment there.
+ */
+export const warmup = (keys = CASE_KEYS, who = contenders, passes = 12) => {
   for (let i = 0; i < passes; i++) {
-    for (const r of contenders) for (const k of keys) r[k]();
+    for (const r of who) for (const k of keys) r[k]();
   }
 };
 
-// How many calls make one batch last `target`. A batch that long is well above timer
-// noise; a fixed count would give lit a 100x longer batch than the unescaped baseline.
-const calibrate = (fn, target) => {
-  let n = 1;
-  for (let guard = 0; guard < 40; guard++) {
-    const per = time(fn, n);
-    if (per * n >= target) return n;
-    n = Math.min(Math.max(n * 2, Math.ceil(target / per)), 5_000_000);
-  }
-  return n;
-};
+// A note on GC, because the options here are a trap.
+//
+// mitata collects before each measurement by default, and when `globalThis.gc` is missing it
+// does it by allocating a 1 GB Uint8Array to provoke one. The bench scripts pass
+// `--expose-gc` so it gets the real collector instead. Measured either way the numbers do not
+// move — the run-to-run spread on the 1000-row case is about 1% with the flag and without it —
+// so this is hygiene, not accuracy.
+//
+// Do not reach for `inner_gc`. It looks like the careful choice and it is the opposite: per
+// iteration GC accounting took the spread on that same case from 1.1% to 13.7% and inflated
+// the median by 10%.
+//
+// Neither option touches the two things that actually move numbers here. The gap between a
+// cold and a warm process (36%) is JIT tier-up, which is what `warmup()` below is for, and it
+// is unchanged with the real collector. The residual artefact that sets ab.js's floor is also
+// unchanged — its false-positive rate on identical source is the same either way.
 
 /**
- * Nanoseconds per call for every renderer and every case: `ns[case][renderer name]`,
- * the median of `rounds` batches.
+ * Nanoseconds per call for every renderer and every case: `ns[case][renderer name]`, as
+ * mitata's median sample. Call `warmup()` first.
  *
  * Writes a warning to stderr if any measurement moved around enough during the run
  * that the numbers should not be trusted — a machine doing something else at the time.
  *
  * @param keys Which cases to time.
- * @param options `target` is how long one batch should take, `rounds` how many to run.
+ * @param who Which renderers to time them on. Defaults to all of them.
  */
-export const measureAll = (keys = CASE_KEYS, { target = 15e6, rounds = 20 } = {}) => {
-  warmup(keys);
-
-  // Calibrate all of them before recording any of them, so the heap has stopped
-  // growing by the time the first number is kept.
-  const iters = {};
-  for (const k of keys) {
-    iters[k] = new Map();
-    for (const r of contenders) {
-      note(`calibrating ${k} / ${r.name}`);
-      iters[k].set(r, calibrate(r[k], target));
-    }
-  }
-
-  const samples = {};
-  for (const k of keys) {
-    samples[k] = {};
-    for (const r of contenders) samples[k][r.name] = [];
-  }
-
-  for (let round = 0; round < rounds; round++) {
-    for (const k of keys) {
-      for (const r of contenders) {
-        note(`round ${round + 1}/${rounds}  ${k} / ${r.name}`);
-        samples[k][r.name].push(time(r[k], iters[k].get(r)));
-      }
-    }
-  }
-  clear();
-
+export const measureAll = async (keys = CASE_KEYS, who = contenders) => {
   const ns = {};
   const shaky = [];
   for (const k of keys) {
     ns[k] = {};
-    for (const r of contenders) {
-      const xs = samples[k][r.name].sort((a, b) => a - b);
-      const median = xs[xs.length >> 1];
-      ns[k][r.name] = median;
-      // How far the slower half ran from the fastest round. A quiet machine sits
-      // under a few percent; a noisy one does not, and then the table is fiction.
-      const spread = (xs[Math.floor(xs.length * 0.75)] - xs[0]) / xs[0];
+    for (const r of who) {
+      note(`measuring ${k} / ${r.name}`);
+      const s = await measure(() => do_not_optimize(r[k]()), { min_cpu_time: MIN_CPU_TIME });
+      ns[k][r.name] = s.p50;
+      // How far the slower half ran from the fastest sample. A quiet machine sits under
+      // a few percent; a noisy one does not, and then the table is fiction.
+      const spread = (s.p75 - s.min) / s.min;
       if (spread > 0.15) shaky.push(`${k}/${r.name} ±${(spread * 100).toFixed(0)}%`);
     }
   }
+  clear();
   if (shaky.length > 0) {
     process.stderr.write(
       `\nwarning: these moved around during the run, so treat them as rough:\n  ${shaky.join('\n  ')}\n` +

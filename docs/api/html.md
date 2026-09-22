@@ -46,21 +46,57 @@ html`<div>${raw(sanitized)}</div>`;
 
 ## Html {#html-class}
 
-The return type.
+The return type. A small wrapper around the markup, not a string.
 
 ```ts
-el.innerHTML = view; // this would coerce to String, but Typescript will be grumpy about it
-String(view);
+view.markup; // the markup itself: no coercion, typed as a string
+String(view); // same thing, via toString()
 `${view}`;
+el.innerHTML = view; // coerces too, though TypeScript will be grumpy about it
 ```
 
+Prefer `view.markup` where you have an `Html` in hand. It is a property read rather than a
+coercion, and it says what you mean.
+
 ::: warning
-It is an object. `typeof` reports `'object'`, an empty one is truthy, and anything that serializes
-objects to JSON will not give you the markup. Use `String(view)` at those boundaries.
+It is an object. `typeof` reports `'object'` and an empty one is truthy, so coerce where a
+primitive is due.
 :::
 
-A private field makes TypeScript treat it as its own type, so a plain string will not pass where an
-`Html` is expected. `raw` and `html` are the only ways to create `Html`.
+It behaves at the boundaries you would expect it to:
+
+|                                        |                                                                                                                        |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `console.log(view)`                    | prints `Html '<p>…</p>'` in the development build                                                                      |
+| `JSON.stringify({ view })`             | gives the markup — there is a `toJSON`                                                                                 |
+| `Object.prototype.toString.call(view)` | `[object Html]`                                                                                                        |
+| `${view}`, `view + ''`, `String(view)` | all go through one `Symbol.toPrimitive`, a nanosecond or so cheaper than the `toString` lookup they would otherwise do |
+
+The inspect hook is development-only — it is a debugging affordance, and the production build
+trades messages for bytes everywhere else too.
+
+A `#private` field makes TypeScript treat it as its own type, so a plain string will not pass
+where an `Html` is expected. `raw` and `html` are the only ways you should create one.
+
+`instanceof` and [`isHtml`](#ishtml) both match on a realm-global brand rather than the prototype
+chain, so two copies of this library in one dependency tree still recognise each other's `Html`.
+Without that, a nested template from the other copy would be escaped as if it were text, silently.
+It is forgeable, but so is `raw()` — both need code running in your process.
+
+### Why it is not a `String` subclass
+
+It would be the obvious design, and it is a trap. Subclassing a builtin makes V8 give up the fast
+paths for `String.prototype` methods across the **entire process** — not just for the subclass,
+and not just for this library. `charCodeAt` alone gets about 9x slower, and the escaper calls it
+once per character. Merely declaring the class does it; no instance is needed.
+
+This library shipped that mistake and measured the cost: removing it made rendering 1.75x to 2.89x
+faster, and stopped penalising every other library in the process by up to 2.8x. JavaScriptCore
+shows no such penalty, so it is a V8 implementation choice rather than a cost the language
+requires. TC39 has a [proposal to remove builtin subclassing][rm-subclassing] for this family of
+reasons.
+
+[rm-subclassing]: https://github.com/tc39/proposal-rm-builtin-subclassing
 
 ## isHtml
 

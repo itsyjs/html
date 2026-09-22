@@ -19,8 +19,13 @@ const Row = (i) =>
 const Group = (g) =>
   html`<section><h2>${g.title}</h2><ul>${g.links.map((l) => html`<li>${Link(l)}</li>`)}</ul></section>`;
 
+const WHY = 'lit emits <!--lit-part--> and <!--lit-node--> hydration markers';
+
 export default {
   name: 'lit + @lit-labs/ssr',
+  // lit wraps everything in <!--lit-part--> and <!--lit-node--> hydration markers, so its
+  // output can never be byte-identical to a plain renderer. That is every case here.
+  differs: { link: WHY, card: WHY, page: WHY, table: WHY, escape: WHY },
   link: () => toString(Link(one)),
   card: () =>
     toString(

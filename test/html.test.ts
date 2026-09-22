@@ -42,7 +42,7 @@ suite('values', () => {
 });
 
 suite('Html', () => {
-  test('is a String that coerces everywhere', () => {
+  test('coerces to its markup everywhere', () => {
     const h = html`<b>x</b>`;
     assert.ok(h instanceof Html);
     assert.ok(isHtml(h));
@@ -50,6 +50,20 @@ suite('Html', () => {
     assert.equal(`${h}`, '<b>x</b>');
     assert.equal(h + '', '<b>x</b>');
     assert.equal(JSON.stringify({ h }), '{"h":"<b>x</b>"}');
+    assert.equal(h.markup, '<b>x</b>'); // no coercion, and typed as a string
+  });
+  test('raw() with a non-string is still Html: the brand field always holds a string', () => {
+    const n = raw(123 as never);
+    assert.ok(isHtml(n));
+    assert.equal(s(html`<b>${n}</b>`), '<b>123</b>');
+  });
+  test('what the brand check accepts, the renderer reads from the same slot', () => {
+    // Forgeable on purpose, like raw(). What must not happen is a yes from isHtml and then
+    // "undefined" in the page because the markup was read from somewhere else.
+    const forged = { [Symbol.for('itsy.html')]: '<i>x</i>' } as never;
+    assert.ok(isHtml(forged));
+    assert.equal(s(html`<p>${forged}</p>`), '<p><i>x</i></p>');
+    assert.equal(s(html`<a href="${forged}"></a>`), '<a href="<i>x</i>"></a>');
   });
   test('is an object: truthy even when empty, so coerce where a primitive is due', () => {
     assert.equal(typeof html``, 'object');

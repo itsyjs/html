@@ -19,22 +19,85 @@ export class HtmlError extends Error {
   }
 }
 
+// Realm-global, so every copy of this library recognises the others' Html. The renderer reads the
+// markup through this same key, so what `instanceof` accepts and what gets rendered cannot differ.
+export const BRAND: unique symbol = Symbol.for('itsy.html');
+// Node and Deno both honour this for console.log.
+const INSPECT: unique symbol = Symbol.for('nodejs.util.inspect.custom');
+
 /**
- * A string that is already HTML: what `html` returns, or something trusted with `raw()`.
+ * Markup that is already HTML: what `html` returns, or something trusted with `raw()`.
+ *
+ * A wrapper, deliberately not a `String` subclass. Subclassing a builtin makes V8 abandon the
+ * fast paths for `String.prototype` methods across the whole process — `charCodeAt` alone gets
+ * 9x slower, and `esc()` calls it once per character. Merely declaring the subclass does it, no
+ * instance required, and it affects every library in the process.
+ *
+ * See <https://github.com/tc39/proposal-rm-builtin-subclassing> for why builtins behave this way.
  *
  * @example
  * ```ts
- * el.innerHTML = view;
- * res.send(String(view));
+ * el.innerHTML = view; // coerces via toString() but TypeScript will be grumpy about it
+ * res.send(view.markup);
  * ```
  */
-export class Html extends String {
-  // Type-only branding.
-  // TypeScript sees the private member and treats Html as distinct, so a plain string can't pass for Html.
-  declare private readonly brand: undefined;
+export class Html {
+  // A `#private` field to brand for TypeScript -> a string can never be mistaken for trusted markup
+  readonly #markup: string;
+
+  constructor(markup: string) {
+    // instanceof reads this through BRAND and expects a string; only the types stop raw(5).
+    this.#markup = typeof markup === 'string' ? markup : String(markup);
+  }
+
+  get markup(): string {
+    return this.#markup;
+  }
+
+  get [BRAND](): string {
+    return this.#markup;
+  }
+
+  /** Cross-realm `instanceof`, via the brand instead of the prototype chain. */
+  static [Symbol.hasInstance](value: unknown): boolean {
+    return typeof (value as { [BRAND]?: unknown } | null | undefined)?.[BRAND] === 'string';
+  }
+
+  /** Every coercion - `${view}`, `view + ''`, `String(view)` - uses this and skips toString. */
+  [Symbol.toPrimitive](): string {
+    return this.#markup;
+  }
+
+  toString(): string {
+    return this.#markup;
+  }
+
+  /** Makes `JSON.stringify({ view })` work. */
+  toJSON(): string {
+    return this.#markup;
+  }
+
+  /** `Object.prototype.toString.call(view)` reports `[object Html]` rather than `[object Object]`. */
+  get [Symbol.toStringTag](): string {
+    return 'Html';
+  }
+
+  /**
+   * This has to be a static block for dev-bundling to work properly
+   * It makes console.log(view) work in dev-mode
+   */
+  static {
+    if (__DEV__) {
+      Object.defineProperty(this.prototype, INSPECT, {
+        value(this: Html, _depth: unknown, options: unknown, inspect?: (v: unknown, o: unknown) => string) {
+          return `Html ${inspect ? inspect(this.markup, options) : JSON.stringify(this.markup)}`;
+        },
+      });
+    }
+  }
 }
 
-/** `true` for an `Html`, from `html` or `raw()`. A plain string is `false`, even one holding markup. */
+/** `true` for an `Html`, which is only possible from `html` or `raw()` */
 export const isHtml = (value: unknown): value is Html => value instanceof Html;
 
 /**

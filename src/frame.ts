@@ -104,7 +104,7 @@ const keyOf = (e: HeadEntry): string | undefined => {
 
 // `<tag attr="…">`, with no trailing space when there are no attributes.
 const open = (tag: string, a: Record<string, AttrValue> | undefined): string => {
-  const at = String(attrs(a ?? {}));
+  const at = attrs(a ?? {}).markup;
   return `<${tag}${at && ' ' + at}>`;
 };
 
@@ -135,8 +135,8 @@ export const element = (e: HeadEntry, nonce?: string): Html => {
     if (code) {
       // Escaping would break code, so the body must already be safe HTML.
       if (!(b instanceof Html)) throw new HtmlError(6, __DEV__ && `a <${tag}> body must be raw()`);
-      body = String(b);
-    } else body = String(html`${b}`); // escaped like any text
+      body = b.markup;
+    } else body = html`${b}`.markup; // escaped like any text
   }
   return raw(VOID.has(tag) ? start : `${start}${body}</${tag}>`);
 };
@@ -146,18 +146,18 @@ export const element = (e: HeadEntry, nonce?: string): Html => {
 type Merged = Map<string | symbol, string>;
 
 // Accepts one part, a list of parts, or nothing, and always gives back a list.
-// `Html` is itself a String, so it would loop over its characters. Catch that first.
+// An `Html` is not iterable, so it lands in the single-part branch like an entry does.
 const list = (x: FramePart | Iterable<FramePart> | undefined): Iterable<FramePart> => {
   if (x == null) return [];
-  if (x instanceof Html || typeof (x as Iterable<FramePart>)[Symbol.iterator] !== 'function') return [x as FramePart];
+  if (typeof (x as Iterable<FramePart>)[Symbol.iterator] !== 'function') return [x as FramePart];
   return x as Iterable<FramePart>;
 };
 
 // Renders each part into `into`. Parts with no identity get a unique Symbol as key, so nothing ever replaces them.
 const merge = (parts: Iterable<FramePart>, nonce: string | undefined, into: Merged = new Map()): Merged => {
   for (const p of parts) {
-    if (p instanceof Html) into.set(Symbol(), String(p));
-    else into.set(keyOf(p) ?? Symbol(), String(element(p, nonce)));
+    if (p instanceof Html) into.set(Symbol(), p.markup);
+    else into.set(keyOf(p) ?? Symbol(), element(p, nonce).markup);
   }
   return into;
 };
@@ -199,9 +199,9 @@ export const frame = (o: FrameOptions): Html => {
   }
   merge(list(o.head), o.nonce, headEntries); // the caller's entries; any with a known identity replace the above
 
-  const header = String(html`${o.header}`);
-  const content = String(html`${o.content}`);
-  const footer = String(html`${o.footer}`);
+  const header = html`${o.header}`.markup;
+  const content = html`${o.content}`.markup;
+  const footer = html`${o.footer}`.markup;
   const scripts = concat(merge(list(o.scripts), o.nonce));
   const main =
     o.main === false

@@ -1,97 +1,179 @@
 # bench
 
-Not part of the package, and not installed with it. Its own `package.json` so the
-root install stays small, and its own `node_modules`, because it pulls in five
-other renderers.
+Not part of the package, and not installed with it. Its own `package.json` so the root
+install stays small, and its own `node_modules`, because it pulls in four other renderers.
+
+Two questions, two tools:
 
 ```sh
-pnpm bench       # from the repo root: the comparison table
-pnpm bench:full  # mitata's own output, with distributions and histograms
-pnpm bench:attrs # attrs() on its own, by attribute shape
-pnpm bench:size  # output bytes instead of time
+pnpm bench            # how fast are we, against the others
+pnpm bench:vs [rev]   # did a change here make a difference (rev defaults to main)
+pnpm bench:size       # what we put on the wire, against the others
 ```
 
-All three root scripts run `tsdown` first, so the numbers always come from the current
-source rather than whatever was in `dist` last. To run a single file from here:
+Each runs `tsdown` first, so the numbers always come from current source rather than
+whatever was in `dist` last. To run one directly:
 
 ```sh
 pnpm install --ignore-workspace
-node table.js   # two tables: relative speed, then time per render
-node server.js  # the same measurements, mitata's full output
-node attrs.js   # attrs() across the shapes that take different paths through it
-node escape.js  # the escaper on its own
-node size.js    # bytes emitted
+node table.js       # the comparison tables
+node ab.js [rev]    # HEAD against another revision, both in one process
+node size.js        # bytes emitted
 ```
 
-`harness.js` holds the contenders, the fairness guard and the timer that both
-`table.js` and `server.js` use. Read the comment at the top of it before changing
-how anything is timed: the numbers used to depend on `verify()` happening to warm
-the V8 heap, and whichever renderer went first without that read two to three times
-slow. It now warms and calibrates everything before recording anything, reports the
-median of twenty batches, and warns on stderr when a run was too noisy to publish.
+`--ignore-workspace` is needed because the repo root has a `pnpm-workspace.yaml` that does
+not list this directory, and pnpm would otherwise decide there is nothing to install.
 
-`table.js` exists because mitata picks a unit per row, which is right when you read
-one row and useless when you read down a column: 947 µs against 2.66 ms against 190 µs
-is three conversions before you know who won. It gives each column one unit, and the
-first of its two tables drops units entirely and shows the ratio to @itsy/html.
+## How things are timed
 
-The `--ignore-workspace` is needed because the repo root has a
-`pnpm-workspace.yaml` that does not list this directory, and pnpm would otherwise
-decide there is nothing to install.
+Everything is timed by [mitata](https://github.com/evanwashere/mitata). `harness.js` holds
+the contenders, the case list, the fairness guard, and a thin wrapper over its `measure()`.
+
+The one thing mitata cannot do for you is warm the *process*. Measured cold, the link case
+reads 224 ns; once every renderer has run once, 164 ns. So `warmup()` runs before anything
+is measured — that is what the harness was originally built around, and the part worth
+keeping. That gap is JIT tier-up, not garbage: it is still 39% with a real collector wired up.
+
+The scripts pass `--expose-gc`. mitata collects before each measurement by default, and
+without that flag it provokes one by allocating a 1 GB `Uint8Array`; with it, it uses the real
+collector. The numbers do not move either way — about 1% run-to-run spread on the 1000-row
+case with the flag and without — so this is hygiene rather than accuracy. Do **not** turn on
+`inner_gc`: per-iteration GC accounting took that same spread from 1.1% to 13.7% and inflated
+the median by 10%.
+
+The timing used to be hand-rolled here: a batch timer, a calibration loop, and a median of
+twenty rounds. It is gone. mitata compiles a fresh loop per benchmark with
+`new AsyncFunction`, so each gets its own monomorphic call site, where the hand-rolled timer
+put everything through a single shared `fn()` that went polymorphic and could not inline the
+callee. That cost the fastest cases up to 30% in pure overhead, and comparing two
+implementations of one small function it inverted the answer outright.
+
+Cases live in one place, `CASES` in `harness.js`, and every table takes both its keys and
+its labels from there.
+
+## Comparing two revisions
+
+`pnpm bench` answers "how does this compare to other libraries". `pnpm bench:vs` answers
+"did my change make it faster", which is a different question and needs a different method.
+
+Running `pnpm bench` twice and diffing the tables does not work. Across processes the same
+build drifts: thirty measurements of byte-identical code across two runs moved a median of
+0.9%, p90 3.5%, and 4.4% at worst — lit moved 4.3% with nothing changed at all. Anything
+under about 5% is invisible that way.
+
+So `ab.js` loads both builds into one process and times them back to back inside each round,
+alternating which goes first. Deltas are taken from *pairs* of rounds — one where HEAD went
+first and one where it went second — so the position advantage cancels inside each sample
+rather than being left to average out. What is reported is the median of those deltas, with
+a 10th-90th percentile band; a band spanning zero reads as noise.
+
+A row only counts as a change if its whole band clears 3%. That floor is measured, not
+guessed: comparing a revision against *itself*, where the true effect is zero, still produces
+bands that exclude zero — two builds in one process differ in module layout, load order and
+code alignment, and the paired statistic is precise enough to measure that faithfully. It is
+real, reproducible, nothing to do with the source change, and not garbage collection: the
+false-positive rate on identical source is the same with a real collector as without one.
+
+Testing the *whole band* rather than the median matters. Against the median alone, roughly one
+bogus row slipped through per self-comparison — things like `-2.1% (-3.7 … -0.8)`, where the
+near edge is nowhere near the floor. Neither rule costs any real signal: the smallest genuine
+change measured here, the URL-guard probe, reads +6.7% (5.7 … 8.4).
+
+Alongside the shared cases it measures two `@itsy/html`-only groups: `cold`, the one-off
+template scan, and `probes` from `renderers/itsy.js` — the `attrs()` paths the shared case
+cannot reach, because that one has to stay byte-identical to preact and so gives up `cx()`'s
+array form and any URL the guard would rewrite.
+
+The baseline is built by `git archive`-ing that revision's `src/` into a temp directory and
+running `tsdown` over it: no worktree, no second install, and the same `__DEV__: false`
+production settings on both sides. Absolute numbers run higher there than in `table.js`,
+because two builds in one process share call sites and caches; it costs both sides the same,
+so the change column is unaffected.
+
+Sanity check, and a good one after touching `ab.js`: `pnpm bench:vs main` from `main` must
+report noise on every row. If it reports a change, the floor is too low.
+
+It cannot measure a change whose effect is process-global, because both builds share the
+process: whatever one of them does to V8 it does to the other, and the pairing cancels the very
+thing you wanted to see. Dropping `class Html extends String` was worth 1.75x to 2.89x measured
+one build per process, and `bench:vs` reported +13% — main's copy was still deoptimising string
+methods for both sides. For a change that touches builtins, prototypes or globals rather than
+just this library's own code, measure one build per process and accept the ~4% cross-process
+noise floor as the price of an honest answer.
 
 ## What is measured
 
 Template in, escaped HTML string out — the whole job, inside the timed function.
 
-That last part is the reason lit appears here as `lit + @lit-labs/ssr` rather than
-as `lit`. Lit's `html` renders nothing; it returns a `TemplateResult` holding the
-strings and the values, and the work happens later, in `lit-html`'s `render()`
-against the DOM or in `@lit-labs/ssr`'s against a string. Timing `html` against
-`html` would compare an object allocation to a full escape-and-concatenate, and
-@itsy/html would win a race the other library never entered.
+That last part is why lit appears as `lit + @lit-labs/ssr` rather than `lit`. Lit's `html`
+renders nothing; it returns a `TemplateResult`, and the work happens later, in `lit-html`'s
+`render()` against the DOM or in `@lit-labs/ssr`'s against a string. Timing `html` against
+`html` would compare an object allocation to a full escape-and-concatenate, and @itsy/html
+would win a race the other library never entered.
 
-`size.js` prints the bytes each renderer emits. Four of the seven agree to the
-byte on four of the five cases, which is the best evidence available that they
-are being asked for the same thing.
+Every renderer is one small file under `renderers/`, holding the same templates, so the
+comparison can be checked by reading them side by side. Before anything is timed or counted,
+`verify()` asserts each one rendered all 1000 rows, left no `<script>` unescaped, and still
+matches @itsy/html byte for byte on every case where it ever did.
 
-Every renderer is one small file under `renderers/`, holding the same five
-templates, so the comparison can be checked by reading them side by side. Before
-anything is timed, `server.js` asserts that each one rendered all 1000 rows and
-left no `<script>` unescaped.
+Not all of them can match, and the ones that cannot say so themselves: each carries a
+`differs` map naming the cases it cannot match and why — ghtml escapes to numeric entities
+and escapes `=` as well, lit emits its `<!--lit-part-->` hydration markers, and preact's
+escaper leaves `>` and `'` alone. An entry that stops being true fails `verify()` too, so an
+exemption cannot outlive the thing it was excusing.
+
+### Attributes from an object
+
+`table.js` has a third table for building attributes from a plain object at render time —
+what `attrs()` is for — and only three of the seven are in it.
+
+lit is absent because it cannot do it at all: `@lit-labs/ssr` does not render element parts,
+and says so in its own source ("Server-only templates don't support element parts, as their
+API does not currently give them any way to render anything on the server"). The one route
+that renders, `unsafeStatic`, works by making the attribute string part of the template's
+identity, so every distinct attribute set compiles a fresh template and leaks it into lit's
+cache — timing that would measure a pathology.
+
+hono and ghtml are absent because neither has an attribute mechanism: an object interpolates
+as `[object Object]`, so the only way through is building the string yourself. Their rows
+would time our builder and a `raw()` passthrough, not the library — the same reason
+`@kitajs/html` is not here at all.
+
+That leaves @itsy/html's `attrs()`, htm's `...${props}` spread, and a hand-written builder in
+`baseline.js` as the floor.
 
 ## The contenders
 
-| renderer                       | what it is                                                       |
-| ------------------------------ | ---------------------------------------------------------------- |
-| `@itsy/html`                   | this library, production build                                    |
-| `hono/html`                    | tagged template, escapes every value, ships inside Hono           |
-| `ghtml`                        | tagged template, escapes every value, zero dependencies           |
-| `htm + preact-render-to-string`| tagged template parsed to preact vnodes, then rendered            |
-| `lit + @lit-labs/ssr`          | `TemplateResult` built by lit, turned into a string by the ssr package |
-| hand-written                   | a plain template literal with an `esc()` call around each value   |
-| no escaping                    | a plain template literal and nothing else                         |
+| renderer                        | what it is                                                            |
+| ------------------------------- | --------------------------------------------------------------------- |
+| `@itsy/html`                    | this library, production build                                         |
+| `hono/html`                     | tagged template, escapes every value, ships inside Hono                |
+| `ghtml`                         | tagged template, escapes every value, zero dependencies                |
+| `htm + preact-render-to-string` | tagged template parsed to preact vnodes, then rendered                 |
+| `lit + @lit-labs/ssr`           | `TemplateResult` built by lit, turned into a string by the ssr package |
+| hand-written                    | a plain template literal with an `esc()` call around each value        |
+| no escaping                     | a plain template literal and nothing else                              |
 
-The last two are reference points rather than libraries. The hand-written one uses
-the same escaper as @itsy/html, so it shows what is left once the scanner, the
-context and the URL guard are taken away: it is the floor for a correct renderer,
-not a typical one. Most hand-rolled escapers are a `replace` with a callback, which
-is roughly half the speed. The unescaped one is the speed of light, and a hole in
-your site.
+The last two are reference points rather than libraries. The hand-written one uses the same
+escaper as @itsy/html, so it shows what is left once the scanner, the context and the URL
+guard are taken away: the floor for a correct renderer, not a typical one. The unescaped one
+is the speed of light, and a hole in your site.
 
-`uhtml` was meant to be here too. Version 5 dropped its `/ssr` export and is now
-browser-only, so there is nothing to compare on the server. `@kitajs/html` is
-left out for a different reason: it is JSX and needs a compile step, so it is not
-the same authoring model.
+`uhtml` was meant to be here too. Version 5 dropped its `/ssr` export and is browser-only, so
+there is nothing to compare on the server. `@kitajs/html` is left out for a different reason:
+it is JSX and needs a compile step, so it is not the same authoring model.
 
 ## Caveats
 
 - One machine, one runtime. Ratios travel between machines; nanoseconds do not.
-- The dataset is 1000 products whose names hold `&` and `"`. Text with nothing to
-  escape is the fastest path in every renderer, and text that is all `<` and `&`
-  is the slowest; real pages sit between them, and the `escape` case is there to
-  show where that edge is.
-- @itsy/html scans each template once and caches the result on the strings array,
-  so the first render of a call site costs more than the rest. `server.js`
-  measures both. The other renderers cache the same way.
-- The production build is what runs here. The development build adds the markup
-  audit, which also runs once per call site, so it lands on the cold number only.
+- The dataset is 1000 products whose names hold `&` and `"`. Text with nothing to escape is
+  the fastest path in every renderer, and text that is all `<` and `&` is the slowest; real
+  pages sit between them, and the `escape` case shows where that edge is.
+- @itsy/html scans each template once and caches the result on the strings array, so the
+  first render of a call site costs more than the rest. `pnpm bench:vs` measures that as
+  `cold`. The other renderers cache the same way.
+- The production build is what runs here. The development build adds the markup audit, which
+  also runs once per call site, so it lands on the cold number only.
+- Importing `harness.js` installs lit's global DOM shim process-wide, because
+  `renderers/lit.js` does it on its first line. Every entry point gets it, `size.js`
+  included, whether or not lit is being measured.
