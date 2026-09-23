@@ -1,7 +1,7 @@
 # Testing
 
 Components are functions returning strings, so they need no renderer, no DOM and no test harness
-beyond whatever you already run.
+beyond whatever the project already runs.
 
 ```ts
 import { test } from 'node:test';
@@ -41,10 +41,10 @@ When it fails, the array says where:
 for (const p of check(Page(data))) console.log('rule' in p ? p.rule : p.code, p.message, p.near);
 ```
 
-## Make sure you are on the dev build
+## Confirm the dev build
 
 In the production build `check()` always returns `[]`. A suite that resolves the production build
-will pass every markup assertion you write, whatever the markup is.
+will pass every markup assertion, whatever the markup is.
 
 Run tests with the condition set:
 
@@ -60,14 +60,14 @@ test('the checks are active', () => assert(check.enabled));
 ```
 
 ::: tip
-Vitest resolves through Vite, which applies the `development` condition in dev. If you are unsure
-what your runner resolved, the assertion above answers it in one run.
+Vitest resolves through Vite, which applies the `development` condition in dev. When it is unclear
+which build a runner resolved, the assertion above answers it in one run.
 :::
 
 ## Storybook
 
-A decorator runs the check on every story, so a broken component fails where you are already
-looking.
+A decorator runs the check on every story, so a broken component fails right in the story being
+viewed.
 
 ```ts
 // .storybook/preview.ts
@@ -85,9 +85,9 @@ export const decorators = [
 Snapshot `String(view)`, never the `Html` itself — a serializer will otherwise record an object.
 
 ```ts
-expect(String(Page(data))).toMatchSnapshot(); // or whatever your runner calls it
+expect(String(Page(data))).toMatchSnapshot(); // or the runner's equivalent
 ```
 
 Whitespace in the output is stable: [static markup collapses to single
-spaces](/guide/writing-html#whitespace), so reindenting your template does not churn the snapshot. Reflowing a
+spaces](/guide/writing-html#whitespace), so reindenting a template does not churn the snapshot. Reflowing a
 line does, since a newline becomes a space.

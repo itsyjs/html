@@ -1,6 +1,6 @@
 # Import map
 
-Six entry points. Each is its own module, so a bundler keeps only what you import.
+Six entry points. Each is its own module, so a bundler keeps only what is imported.
 
 | import                             | exports                                                     |
 | ---------------------------------- | ----------------------------------------------------------- |
@@ -28,5 +28,5 @@ a production build. Node and esbuild need `--conditions=development`. See
 [bundlers and editors](/recipes/tooling).
 
 Both builds render identical output and throw the same `HtmlError.code`. Only the message text and
-the markup check differ: the development build spells the message out and checks your markup, and
+the markup check differ: the development build spells the message out and checks the markup, and
 the production build throws `E` followed by the code.

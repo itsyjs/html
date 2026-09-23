@@ -1,6 +1,6 @@
 # Types
 
-Every export is typed in its `.d.ts`; this is the shape of the ones you are likely to write out.
+Every export is typed in its `.d.ts`; this is the shape of the ones most likely to be written out.
 
 ## `Renderable`
 
@@ -117,11 +117,10 @@ interface Visitor {
 }
 ```
 
-A project's own rules, for `check()`'s [`rules`](/api/check#your-own-rules) option. Every hook is
+A project's own rules, for `check()`'s [`rules`](/api/check#custom-rules) option. Every hook is
 optional. From `@itsy/html/check`.
 
-Passing your own rules widens the result to `Finding<string>`, since the names are yours and this
-cannot know them.
+Passing custom rules widens the result to `Finding<string>`, since this cannot know their names.
 
 ## `FrameOptions`, `HeadEntry`, `FramePart`
 

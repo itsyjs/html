@@ -4,7 +4,7 @@
 import { join, map, range, when, choose, wrap, comment } from '@itsy/html/util';
 ```
 
-Opt-in helpers with no shared state, one export each, so a bundler keeps only what you import.
+Opt-in helpers with no shared state, one export each, so a bundler keeps only what is imported.
 
 Everything except `comment` returns a plain array or the result of a thunk. Nothing here renders
 markup or escapes anything; the template it lands in does that, for the context it lands in.

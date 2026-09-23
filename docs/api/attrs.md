@@ -5,7 +5,7 @@ import { attrs, cx, esc } from '@itsy/html/attrs';
 ```
 
 Independent of the template scanner. `attrs` and `cx` are also exported from the root, so importing
-from here is only worth it when you want nothing else from the library.
+from here is only worth it when nothing else from the library is needed.
 
 ## attrs
 
@@ -62,5 +62,5 @@ esc(text: string): string
 
 Escapes `&`, `<`, `>`, `"` and `'`. It is what the renderer uses for text and attribute values.
 
-You need it only when assembling markup by hand to hand to `raw()`. Prefer putting the value in a
-template, where the escaping is chosen by context rather than by you.
+It is needed only when assembling markup by hand to pass to `raw()`. Prefer putting the value in a
+template, where the context chooses the escaping.

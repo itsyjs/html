@@ -40,7 +40,7 @@ inside `<script>`, in any `on*` attribute — it throws instead of guessing. The
 wrapper, so a template nested in another is not escaped twice, and the same function renders on a
 server and in a browser.
 
-## What you get
+## Features
 
 - **[Escaping by context][contexts]** — text, a quoted attribute, a URL, the inside of a tag, a
   script body and a comment are six different jobs, and the renderer picks per value.
@@ -59,15 +59,15 @@ server and in a browser.
   with no `alt`, the role that does not exist. `{ a11y: { without: [...] } }` turns any of them
   off, with the names type-checked. They cost nothing — the production build compiles them away
   with the rest of `check()`.
-- **[Your own rules][check]** — `check(page, { rules })` runs a project's rules in that same pass,
+- **[Custom rules][check]** — `check(page, { rules })` runs a project's rules in that same pass,
   so house style and design-system constraints report like everything else, and ship like
   everything else: not at all.
 
-## Before you start
+## Before starting
 
 > [!WARNING]
 > `Html` is an object, not a primitive. `typeof` reports `'object'`, an empty one is truthy, and
-> any framework that serializes objects will JSON-encode it rather than send your markup. Call
+> any framework that serializes objects will JSON-encode it rather than send the markup. Call
 > `String(view)` at that boundary.
 
 > [!WARNING]

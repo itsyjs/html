@@ -29,7 +29,7 @@ not list this directory, and pnpm would otherwise decide there is nothing to ins
 Everything is timed by [mitata](https://github.com/evanwashere/mitata). `harness.js` holds
 the contenders, the case list, the fairness guard, and a thin wrapper over its `measure()`.
 
-The one thing mitata cannot do for you is warm the *process*. Measured cold, the link case
+The one thing mitata cannot do is warm the *process*. Measured cold, the link case
 reads 224 ns; once every renderer has run once, 164 ns. So `warmup()` runs before anything
 is measured — that is what the harness was originally built around, and the part worth
 keeping. That gap is JIT tier-up, not garbage: it is still 39% with a real collector wired up.
@@ -95,7 +95,7 @@ report noise on every row. If it reports a change, the floor is too low.
 
 It cannot measure a change whose effect is process-global, because both builds share the
 process: whatever one of them does to V8 it does to the other, and the pairing cancels the very
-thing you wanted to see. Dropping `class Html extends String` was worth 1.75x to 2.89x measured
+thing being measured. Dropping `class Html extends String` was worth 1.75x to 2.89x measured
 one build per process, and `bench:vs` reported +13% — main's copy was still deoptimising string
 methods for both sides. For a change that touches builtins, prototypes or globals rather than
 just this library's own code, measure one build per process and accept the ~4% cross-process
@@ -135,7 +135,7 @@ identity, so every distinct attribute set compiles a fresh template and leaks it
 cache — timing that would measure a pathology.
 
 hono and ghtml are absent because neither has an attribute mechanism: an object interpolates
-as `[object Object]`, so the only way through is building the string yourself. Their rows
+as `[object Object]`, so the only way through is building the string by hand. Their rows
 would time our builder and a `raw()` passthrough, not the library — the same reason
 `@kitajs/html` is not here at all.
 
@@ -157,7 +157,7 @@ That leaves @itsy/html's `attrs()`, htm's `...${props}` spread, and a hand-writt
 The last two are reference points rather than libraries. The hand-written one uses the same
 escaper as @itsy/html, so it shows what is left once the scanner, the context and the URL
 guard are taken away: the floor for a correct renderer, not a typical one. The unescaped one
-is the speed of light, and a hole in your site.
+is the speed of light, and an XSS hole.
 
 `uhtml` was meant to be here too. Version 5 dropped its `/ssr` export and is browser-only, so
 there is nothing to compare on the server. `@kitajs/html` is left out for a different reason:

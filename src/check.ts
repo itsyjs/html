@@ -34,7 +34,7 @@ export interface CheckOptions {
    */
   a11y?: boolean | A11yOptions;
   /**
-   * Your own rules, run in the same pass and reported into the same list.
+   * Custom rules, run in the same pass and reported into the same list.
    *
    * @example
    * ```ts
@@ -105,7 +105,7 @@ interface Check {
    */
   (markup: string | Html, options?: CheckOptions & { rules?: undefined }): (Problem | Finding<A11yRule>)[];
   /**
-   * With rules of your own, whose names this cannot know, so a finding's `rule` widens to `string`.
+   * With custom rules, whose names this cannot know, so a finding's `rule` widens to `string`.
    *
    * @example
    * ```ts

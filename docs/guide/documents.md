@@ -33,7 +33,7 @@ frame({
 | ----------------------------- | --------------------------------------------------------------------------------- |
 | `lang`, `dir`                 | `<html lang dir>`. `lang` is required.                                            |
 | `title`, `description`        | Written into the head after charset and viewport. Both escaped.                   |
-| `head`                        | Entries, in your order, after those four.                                         |
+| `head`                        | Entries, in the order given, after those four.                                    |
 | `header`, `content`, `footer` | The body, in that order.                                                          |
 | `main`                        | `false` writes `content` without the `<main>` wrapper, for a page with its own.   |
 | `scripts`                     | Right before `</body>`.                                                           |
@@ -42,8 +42,8 @@ frame({
 
 ## The head merges
 
-The head starts with charset, viewport, title and description, then your entries in the order you
-gave them. If two entries are the same thing — two icons of the same type, two `<meta>` with the
+The head starts with charset, viewport, title and description, then the entries in the order
+given. If two entries are the same thing — two icons of the same type, two `<meta>` with the
 same name — the later one wins and takes the earlier one's position.
 
 That ordering rule is what makes shared layouts work. A page can spread in a shared list of head
@@ -72,13 +72,13 @@ An entry is `{ tag, attrs, body, key }`.
 :::
 
 ::: details The head, in the order a browser wants it
-The frame writes the first three. The rest is yours, in the order you give it, so give it in this
+The frame writes the first three. The rest comes from `head`, in the order given, so list it in this
 order.
 
 1. `<meta charset>`, first, so the parser never has to restart.
 2. `<meta name="viewport">`, before any layout is computed. A `color-scheme` meta belongs here too.
 3. `<title>`, then `<meta name="description">`.
-4. Render-blocking scripts, and a `no-js` class swap if you use one, before the stylesheets.
+4. Render-blocking scripts, and a `no-js` class swap if there is one, before the stylesheets.
 5. Stylesheets, with the print stylesheet (`media="print"`) last.
 6. Module scripts. `type="module"` defers them, so they cost nothing here.
 7. Icons and the manifest.
@@ -109,7 +109,7 @@ frame({
 
 :::
 
-## When you already have an `<html>` tag
+## With an existing `<html>` tag
 
 An Astro layout, or any framework that owns the document, has trouble making use of `frame`.
 

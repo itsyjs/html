@@ -6,11 +6,10 @@ that line.
 
 ## It escapes values, it does not clean markup
 
-This is not a sanitizer. Given a string of HTML from a user, it has nothing to offer: escape it and
-you get visible tags, `raw()` it and you have published whatever it contained. There is no third
-option here.
+This is not a sanitizer. Given a string of HTML from a user, it has nothing to offer: escaping it
+shows the tags as text, and `raw()` publishes whatever it contained. There is no third option here.
 
-If you need to accept markup from people — comment bodies, a rich-text field, anything pasted — run
+To accept markup from people — comment bodies, a rich-text field, anything pasted — run
 it through a sanitizer first and `raw()` the result.
 
 ```ts
@@ -30,8 +29,8 @@ fixed list, as in ``raw(`h${level}`)`` with a checked `level`, never from input.
 
 ## Data in a script block
 
-`JSON.stringify` does not escape `<`, and a `</script>` inside your data ends the block early
-however the JSON is quoted. This is the one escape the library cannot do for you, because the
+`JSON.stringify` does not escape `<`, and a `</script>` inside the data ends the block early
+however the JSON is quoted. This is the one escape the library cannot do, because the
 contents of a script are `raw()` by definition.
 
 ```ts
@@ -46,26 +45,29 @@ Or use a serializer that already handles it, such as devalue or serialize-javasc
 The library writes no inline event handlers — `on*` is refused outright — so a policy without
 `unsafe-inline` for scripts is compatible as written.
 
-For inline scripts and styles you do add, `frame({ nonce })` puts the nonce on every script and
-style entry that does not have one. Generate it per request.
+For the inline scripts and styles a page does add, `frame({ nonce })` puts the nonce on every script
+and style entry that does not have one. Generate it per request.
 
 ```ts
 const nonce = crypto.randomUUID();
 frame({ lang: 'en', title, scripts, nonce });
 ```
 
-Ready-made `Html` passed into `head` or `scripts` is left alone, nonce included. If you build the
-element yourself, put the nonce on it yourself.
+Ready-made `Html` passed into `head` or `scripts` is left alone, nonce included. An element built
+by hand needs its nonce added by hand.
 
 ## It is not an HTML validator
 
-The [markup check](/guide/checks) catches what a browser would silently repair —
-unclosed tags, stray end tags, nesting the parser rewrites. It does not know the content model. It
-will not tell you a `<div>` does not belong in a `<span>`, that an `<img>` needs `alt`, or that
-your heading levels skip a rank. Use html-validate or an accessibility linter for those.
+The [markup check](/guide/checks) catches what a browser would silently repair — unclosed tags,
+stray end tags, nesting the parser rewrites — and the [accessibility
+rules](/api/check#accessibility) in `check()` report common failures such as an `<img>` with no
+`alt` or a field with no label. Neither knows the content model, so a `<div>` inside a `<span>`
+passes, and neither follows the heading outline, so levels that skip a rank pass too. Use
+html-validate for the content model, and a full accessibility audit such as axe-core for what the
+rules leave out.
 
 ## No async
 
-A `Promise` in a template throws [code 7](/reference/errors#e7). Await your data before you build
+A `Promise` in a template throws [code 7](/reference/errors#e7). Await data before building
 the markup. The renderer being synchronous end to end is what lets the same function run in a
 browser with no build step.

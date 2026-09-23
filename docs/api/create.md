@@ -5,7 +5,7 @@ import { createHtml, SCHEMES } from '@itsy/html/create';
 import type { CreateOptions } from '@itsy/html/create';
 ```
 
-Your own `html` and `attrs`, with a different URL scheme list or whitespace rule. The root exports
+A separate `html` and `attrs`, with a different URL scheme list or whitespace rule. The root exports
 keep the defaults.
 
 ## createHtml
@@ -59,7 +59,7 @@ const SCHEMES: ReadonlySet<string>; // http, https, mailto, tel, data, blob
 The default set, exported so it can be spread when needed.
 
 ::: warning
-`frame` and `wrap()` always use `SCHEMES`. A scheme you add here is still blocked in a frame head
+`frame` and `wrap()` always use `SCHEMES`. A scheme added here is still blocked in a frame head
 entry or a `wrap()` attribute. For a single link, `raw()` on the whole tag is simpler — see [the URL
 guard](/security/url-guard#adding-a-scheme).
 :::

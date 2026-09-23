@@ -59,15 +59,15 @@ String(view); // same thing, via toString()
 el.innerHTML = view; // coerces too, though TypeScript will be grumpy about it
 ```
 
-Prefer `view.markup` where you have an `Html` in hand. It is a property read rather than a
-coercion, and it says what you mean.
+Prefer `view.markup` where an `Html` is in hand. It is a property read rather than a
+coercion, and it states the intent.
 
 ::: warning
 It is an object. `typeof` reports `'object'` and an empty one is truthy, so coerce where a
 primitive is due.
 :::
 
-It behaves at the boundaries you would expect it to:
+It behaves as expected at the boundaries:
 
 |                                        |                                                                                                                        |
 | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -80,12 +80,12 @@ The inspect hook is development-only — it is a debugging affordance, and the p
 trades messages for bytes everywhere else too.
 
 A `#private` field makes TypeScript treat it as its own type, so a plain string will not pass
-where an `Html` is expected. `raw` and `html` are the only ways you should create one.
+where an `Html` is expected. `raw` and `html` are the only supported ways to create one.
 
 `instanceof` and [`isHtml`](#ishtml) both match on a realm-global brand rather than the prototype
 chain, so two copies of this library in one dependency tree still recognise each other's `Html`.
 Without that, a nested template from the other copy would be escaped as if it were text, silently.
-It is forgeable, but so is `raw()` — both need code running in your process.
+It is forgeable, but so is `raw()` — both need code already running in the process.
 
 ### Why it is not a `String` subclass
 

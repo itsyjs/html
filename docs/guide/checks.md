@@ -60,10 +60,10 @@ off. The names are typed, so a typo is a type error.
 check('<img src="photo-3.png" alt="photo-3.png">', { a11y: { without: ['img-alt-filename'] } });
 ```
 
-## Your own rules
+## Custom rules
 
 `rules` runs a project's rules in the same pass and reports them into the same list.
-[The hooks](/api/check#your-own-rules).
+[The hooks](/api/check#custom-rules).
 
 ```ts run
 check('<p style="color:red">x</p>', {

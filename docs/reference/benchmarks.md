@@ -1,7 +1,7 @@
 # Benchmarks
 
 Template in, escaped HTML string out, measured against four other renderers and two reference
-points. The suite lives in [`bench/`][bench] and you can run it yourself:
+points. The suite lives in [`bench/`][bench] and runs locally:
 
 ```sh
 pnpm bench            # the tables below
@@ -84,7 +84,7 @@ is the floor for a correct renderer rather than a typical one. Most hand-rolled 
 `replace` with a callback, which is roughly half the speed.
 
 **no escaping** is the same template literal with the `esc()` calls taken out. It is the speed of
-light, and a hole in your site.
+light, and an XSS hole.
 
 ## Why lit appears with @lit-labs/ssr
 

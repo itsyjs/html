@@ -11,7 +11,7 @@ full; the production build's message is `E` followed by the code.
 | [6](#e6)   | a non-`Html` expression inside a tag, `<script>`, `<style>` or a comment        | `html`, `frame`            |
 | [7](#e7)   | a value that cannot be rendered: an object, a `Promise`, a symbol               | `html`                     |
 | [8](#e8)   | a tag never closed with `>`                                                     | `html`                     |
-| [9](#e9)   | an element still open at the end, or one the next start tag closed for you      | `html`                     |
+| [9](#e9)   | an element still open at the end, or one the next start tag closed implicitly   | `html`                     |
 | [10](#e10) | an end tag that closes nothing, or the wrong element                            | `html`                     |
 | [11](#e11) | `/>` on an element that does not self-close                                     | `html`                     |
 | [12](#e12) | an end tag on a void element                                                    | `html`                     |
@@ -89,14 +89,14 @@ html`<${name}>`; // ✗ right after `<`, where the tag's name goes
 
 Right after a `<` counts as inside a tag: a value that starts with a letter would be read as the
 tag's name, so `img src=x onerror=…` would open an `<img>` of its own. Write `&lt;` for a literal
-less-than sign, or put a tag name you trust in `raw()`.
+less-than sign, or put a trusted tag name in `raw()`.
 
 A `<script>` or `<style>` with a `<!--` or `<![CDATA[` still open counts as inside it, past its end
 tag: in an SVG script, and in the escaped states of an HTML one, the browser reads that end tag as
 text.
 
 Inside a tag, use [`attrs()`](/api/attrs). Inside `<script>`, `<style>` or a comment, use `raw()` —
-and read [data in a script block](/security/limits#data-in-a-script-block) before you put JSON
+and read [data in a script block](/security/limits#data-in-a-script-block) before putting JSON
 there. For untrusted comment text, [`comment()`](/api/util#comment) escapes it safely.
 
 This is also the code a [`frame`](/api/frame) script or style entry throws when its body is a plain
@@ -112,7 +112,7 @@ html`<p>${{ a: 1 }}</p>`; // ✗ object
 html`<p>${fetchUser()}</p>`; // ✗ Promise
 ```
 
-Await before you build the template. For an object, pass the property you meant. TypeScript reports
+Await before building the template. For an object, pass the intended property. TypeScript reports
 this first: the parameter type is `Renderable`, so neither one typechecks.
 
 ## Code 8 {#e8}
@@ -124,13 +124,13 @@ html`<div class="a" <p>`; // ✗
 ```
 
 ::: details What the browser does
-Reads the `<p` as an attribute name on the `div`, so you get one element with an attribute called
+Reads the `<p` as an attribute name on the `div`, producing one element with an attribute called
 `<p` and no paragraph at all.
 :::
 
 ## Code 9 {#e9}
 
-An element still open when the template ends, or one that the next start tag closed for you.
+An element still open when the template ends, or one that the next start tag closed implicitly.
 
 ```ts
 html`<div><p>x</p>`; // ✗ the div is never closed
@@ -140,9 +140,9 @@ html`<ul><li>a<li>b</ul>`; // ✗ the second <li> closed the first
 ::: details What the browser does
 An unclosed element swallows whatever follows it — in a list of components, the next sibling ends up
 inside the previous one. HTML does permit omitting `</li>`, `</p>` and some others, but in a
-template the likelier reading is that you forgot.
+template the likelier reading is that the end tag was forgotten.
 
-The browser closes more for you than the spec's list of end tags you may leave out: a `<p>` at any
+The browser closes more than the spec's list of omittable end tags: a `<p>` at any
 block such as `<xmp>` or `<listing>`, an `<option>` at an `<hr>`, a table cell, row or section at any
 table part that cannot sit in it. Each is reported where the parser does it.
 :::
@@ -185,7 +185,7 @@ Ignores the slash, opens the element, and never closes it. Everything after it e
 :::
 
 A formatter is a common cause — Prettier and oxfmt rewrite `<br>` to `<br />` inside templates
-unless you [turn embedded formatting off](/recipes/tooling#formatters-rewrite-your-markup).
+unless [embedded formatting is turned off](/recipes/tooling#formatters-rewrite-embedded-markup).
 
 ## Code 12 {#e12}
 
@@ -220,7 +220,7 @@ html`<body><body class="x">…</body></body>`; // ✗ a second <body>
 ::: details What the browser does
 Rewrites it. A `<div>` inside a `<p>` closes the paragraph first, leaving an empty `<p></p>` before
 the div and a stray `</p>` after it. A nested `<a>` is moved out. A `<tr>` with no `<tbody>` gets
-one inserted, so a CSS selector or a `querySelector` written against your markup misses. Text
+one inserted, so a CSS selector or a `querySelector` written against the source markup misses. Text
 directly inside a table is moved out in front of it. Inside SVG or MathML, an HTML tag such as
 `<p>`, `<div>` or `<img>` closes the foreign content and starts over as HTML. Anything after
 `</body>` is moved back into the body, and anything that belongs in the head, after `</head>`, back
@@ -294,7 +294,7 @@ a body to go.
 ## Code 19 {#e19}
 
 A URL [the guard](/security/url-guard) replaced with `about:blank#blocked`. Reported by
-[`check()`](/api/check), never thrown, because the URL came from data rather than from your markup.
+[`check()`](/api/check), never thrown, because the URL came from data rather than from the template.
 
 ```ts
 check(String(html`<a href="${'javascript:alert(1)'}">x</a>`));
@@ -302,5 +302,5 @@ check(String(html`<a href="${'javascript:alert(1)'}">x</a>`));
 ```
 
 Finding one means something upstream produced a URL with a scheme outside the allowed set. Either
-the data is wrong, or the scheme is one you meant to allow — see [adding a
+the data is wrong, or the scheme should be allowed — see [adding a
 scheme](/security/url-guard#adding-a-scheme).

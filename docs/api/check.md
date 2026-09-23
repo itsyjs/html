@@ -5,10 +5,10 @@ import { check } from '@itsy/html/check';
 import type { Problem, Finding, RuleSet, Visitor, Report, A11yRule, A11yOptions, CheckOptions } from '@itsy/html/check';
 ```
 
-Everything the library checks lives here: the [markup check](/guide/checks) over a rendered page,
-[twenty-five accessibility rules](#accessibility) that run by default, and the
-[hook for your own rules](#your-own-rules). All of it is development-only — the production build
-compiles `check` down to a function that immediately returns an empty array, 28 bytes.
+Everything the library checks, including: the [markup check](/guide/checks) over a rendered page,
+[twenty-five accessibility rules](#accessibility) that run by default, and a [hook for adding
+additional rules](#custom-rules). All of it is development-only — the production build compiles
+`check` down to a function that immediately returns an empty array, 28 bytes.
 
 ## check
 
@@ -32,10 +32,10 @@ Because it sees the finished page, it catches what one `html` call cannot:
 - the [accessibility rules](#accessibility), which need the finished markup for the same reason
 
 ::: danger Always `[]` in the production build
-There is no check in the production build, so `check()` there returns an empty array whatever you
-pass it. A test suite that resolves the production build will pass every assertion based on it.
-Assert [`check.enabled`](#check-enabled) once and it cannot. See [make sure you are on the dev
-build](/recipes/testing#make-sure-you-are-on-the-dev-build).
+There is no check in the production build, so `check()` there returns an empty array whatever it is
+passed. A test suite that resolves the production build will pass every assertion based on it.
+Assert [`check.enabled`](#check-enabled) once and it cannot. See [confirming the dev
+build](/recipes/testing#confirm-the-dev-build).
 :::
 
 ## CheckOptions
@@ -57,7 +57,7 @@ an id reference pointing outside the fragment is expected.
 
 `a11y: false` leaves only the markup check, and narrows the return type back to `Problem[]`.
 
-`rules` runs [your own rules](#your-own-rules) in the same pass.
+`rules` runs [custom rules](#custom-rules) in the same pass.
 
 The ids checked are `for`, `form`, `list`, `headers`, `popovertarget`, `commandfor`, `itemref` and
 the `aria-*` relations.
@@ -98,9 +98,9 @@ here ever throws, and a name says what it found without a lookup.
 
 ## Accessibility
 
-Advice rather than correctness, but in the same pass and the same list, because a finding you have
-to ask for is a finding nobody sees. They cost nothing to leave on: they compile away with the rest
-of `check()`.
+Advice rather than correctness, but in the same pass and the same list, because a finding that has
+to be asked for is a finding nobody sees. They cost nothing to leave on: they compile away with the
+rest of `check()`.
 
 An empty list means these rules found nothing, not that the page is accessible.
 
@@ -166,7 +166,7 @@ and unlike a suppression comment those tell a screen reader the same thing:
 ```
 
 There is no `data-a11y-ignore` attribute and there will not be one. This library renders exactly
-what you write, so a suppression marker would ship to every visitor — an ESLint comment is stripped
+what is written, so a suppression marker would ship to every visitor — an ESLint comment is stripped
 at build, an attribute is not.
 
 ### Quiet by design
@@ -180,7 +180,7 @@ cannot be sure:
   keyboard still reaches what `aria-hidden` hides, which is what `aria-hidden-focus` is for.
 - Each rule goes by the role the browser gives the element, not by its tag. `<span role="button">`
   is a button, `<a href role="doc-biblioref">` is a link, and `<h2 role="none">` is no heading.
-- `alt=""`, `role="presentation"` and `role="none"` are how you say an image is decoration, and all
+- `alt=""`, `role="presentation"` and `role="none"` mark an image as decoration, and all
   three are respected — until the browser has to ignore them, on anything focusable or anything
   with a global ARIA attribute such as `aria-label`. Then the element keeps its role, and the rules
   read it as what it is.
@@ -199,7 +199,7 @@ cannot be sure:
 - Nor is `<ul role="list">`, or `role="table"`, `role="caption"`, `role="rowgroup"` and
   `role="row"` on the table elements that already have them. Safari drops the list role from a
   list styled `list-style: none`, browsers have dropped the table roles from a table given another
-  `display`, and restating the role is how you put it back.
+  `display`, and restating the role puts it back.
 - An `<input>` keeps its own state whatever role it is given. `<input type="checkbox" role="switch">`
   is the native switch, and needs no `aria-checked` — ARIA in HTML forbids one. A text input with
   a `list` is a combobox already, and needs no `aria-expanded`.
@@ -227,7 +227,7 @@ does, the tree it read is the one a spec-conformant parser builds; and over ever
 of the elements the parser treats specially, it reports a problem exactly when that parser changes
 what is written.
 
-## Your own rules
+## Custom rules
 
 `rules` runs a project's own rules in the same walk, reporting into the same list: house style,
 design-system constraints, anything that reads as markup.
@@ -254,13 +254,13 @@ interface Visitor {
 }
 ```
 
-A rule set is called once per `check()` and returns a visitor, so per-run state goes in the
-closure. Every hook is optional, and `near` is filled in for you — a rule never looks at the markup
+A rule set is called once per `check()` and returns a visitor, so per-run state goes in the closure.
+Every hook is optional, and `near` is filled in automatically — a rule never looks at the markup
 itself.
 
 - **`open`** — a start tag. `attrs` has lowercased names and verbatim values; a bare attribute is
   present with an empty value. `ancestors` is outermost first, and holds what is _really_ open:
-  anything the browser would have closed already is closed. Both are yours to keep. A void element
+  anything the browser would have closed already is closed. A rule may keep both. A void element
   opens and never closes.
 - **`text`** — a run of text, as written, and never empty, with its `ancestors` as `open` gives
   them. Entities are not decoded, and a `<` that opens no tag is part of the text, as the browser
@@ -275,7 +275,7 @@ Pass an array to run several. Findings from all of them are sorted into page ord
 problems, so the list reads top to bottom whatever produced it. An entry that is not a function is
 left out, so `rules: [strict && house]` reads as it looks.
 
-Your rule names are yours, so passing `rules` widens the result to `Finding<string>`.
+Custom rule names are open-ended, so passing `rules` widens the result to `Finding<string>`.
 
 ::: tip This is a development-only surface
 It ships as nothing, so it can afford to be generous — and it is versioned more loosely than the
@@ -295,4 +295,4 @@ built on `check()` without looking at anything. Assert this once and it cannot:
 test('the checks are active', () => assert(check.enabled));
 ```
 
-See [make sure you are on the dev build](/recipes/testing#make-sure-you-are-on-the-dev-build).
+See [confirming the dev build](/recipes/testing#confirm-the-dev-build).

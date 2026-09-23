@@ -105,7 +105,7 @@ export const isHtml = (value: unknown): value is Html => value instanceof Html;
  *
  * @example
  * ```ts
- * html`<script>${raw(json)}</script>` // use raw to pass content into <script> - sanitize the JSON however you prefer
+ * html`<script>${raw(json)}</script>` // use raw to pass content into <script> - sanitize the JSON first
  * ```
  */
 export const raw = (markup: string): Html => new Html(markup);

@@ -54,7 +54,7 @@ There is no streaming and no partial flush. `frame()` builds the whole document 
 For most pages that is the simpler trade: no suspense boundaries, no out-of-order chunks, and the
 `Content-Length` is known.
 
-If you need a shell sent before the data is ready, send two responses — a fast page and a fetch —
+To send a shell before the data is ready, send two responses — a fast page and a fetch —
 rather than trying to split a template.
 
 ## A nonce per request

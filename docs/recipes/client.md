@@ -55,6 +55,6 @@ itself in place.
 
 ## Importing less
 
-If all you want in the browser is `cx()` and `attrs()` for class and style lists,
-`@itsy/html/attrs` gives you those without the template scanner. See
+If the browser only needs `cx()` and `attrs()` for class and style lists,
+`@itsy/html/attrs` provides them without the template scanner. See
 [the import map](/reference/imports).
