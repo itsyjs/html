@@ -102,6 +102,9 @@ Items are rendered by the surrounding template, so text is escaped and `Html` is
 through `attrs()` with the **default** URL guard, not one from `createHtml`. A tag name that is not
 a legal tag name throws [code 17](/reference/errors#e17).
 
+Inside `<script>` and `<style>` every item must itself be `Html`, and anything else throws
+[code 6](/reference/errors#e6): escaping keeps text from ending the block, but not from running.
+
 ## comment
 
 ```ts

@@ -49,27 +49,29 @@ export interface CheckOptions {
   rules?: RuleSet | readonly RuleSet[];
 }
 
-// Drives several rule sets from the one walk. Each hook is forwarded to every visitor that wants
-// it, in the order the sets were given, so their findings interleave in page order like any other.
-const compose =
-  (sets: readonly RuleSet[]): RuleSet =>
-  (report) => {
-    const visitors = sets.map((s) => s(report));
-    return {
-      open: (tag, attrs, at, ancestors) => {
-        for (const v of visitors) v.open?.(tag, attrs, at, ancestors);
-      },
-      text: (content, at) => {
-        for (const v of visitors) v.text?.(content, at);
-      },
-      close: (tag, at, hadText) => {
-        for (const v of visitors) v.close?.(tag, at, hadText);
-      },
-      end: (ids) => {
-        for (const v of visitors) v.end?.(ids);
-      },
-    };
-  };
+// The rule sets as one, so the audit walks the markup once whatever the count. Each hook is
+// forwarded to every visitor that wants it, in the order the sets were given, so their findings
+// interleave in page order like any other. One set is handed over as it is, and none as nothing.
+const compose = (sets: readonly RuleSet[]): RuleSet | undefined =>
+  sets.length < 2
+    ? sets[0]
+    : (report) => {
+        const visitors = sets.map((s) => s(report));
+        return {
+          open: (tag, attrs, at, ancestors) => {
+            for (const v of visitors) v.open?.(tag, attrs, at, ancestors);
+          },
+          text: (content, at, ancestors) => {
+            for (const v of visitors) v.text?.(content, at, ancestors);
+          },
+          close: (tag, at, hadText) => {
+            for (const v of visitors) v.close?.(tag, at, hadText);
+          },
+          end: (ids) => {
+            for (const v of visitors) v.end?.(ids);
+          },
+        };
+      };
 
 interface Check {
   /**
@@ -130,16 +132,15 @@ export const check = ((markup: string | Html, options?: CheckOptions) => {
   if (__DEV__) {
     // What is left out takes its default, and a `null` in place of the options leaves them all out.
     // A `null` inside them is outside the types too, and reads as `false` wherever it lands: rules
-    // off, no rules of your own, id checks off. Never a throw.
+    // off, id checks off, and in `rules`, one set fewer — so `rules: [flag && house]` works as it
+    // reads. Never a throw.
     const { ids = true, a11y = true, rules } = options ?? {};
     // The built-in rules run first, so when they and a project's report from the same hook at the
     // same offset, theirs reads first.
     const sets: RuleSet[] = [];
     if (a11y) sets.push(a11yRules(a11y === true ? undefined : a11y.without));
-    if (typeof rules === 'function') sets.push(rules);
-    else if (rules) sets.push(...rules);
-    // One walk whatever the count: a single set is driven directly, several through `compose`.
-    audit([String(markup)], (p) => found.push(p), { ids }, sets.length > 1 ? compose(sets) : sets[0]);
+    for (const set of [rules].flat()) if (typeof set === 'function') sets.push(set);
+    audit([String(markup)], (p) => found.push(p), { ids }, compose(sets));
     found.sort((a, b) => a.at - b.at); // a rule reports as the audit walks; this puts everything in page order
   }
   return found;

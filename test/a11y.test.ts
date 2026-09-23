@@ -20,7 +20,7 @@ suite('a11y rules', () => {
     assert.deepEqual(found('<img src="c.jpg" aria-hidden="false">'), ['img-alt']);
     assert.deepEqual(found('<div aria-hidden="true"><img src="x.png"></div><img src="y.png">'), ['img-alt']);
     assert.deepEqual(found('<figure><img src="a.png"><figcaption>A cat</figcaption></figure>'), ['img-alt']);
-    assert.deepEqual(found('<textarea><img src=x></textarea>'), []);
+    assert.deepEqual(found('<textarea aria-label="Note"><img src=x></textarea>'), []);
   });
   test('img-alt-filename: alt text that is the file name', () => {
     assert.deepEqual(found('<img src="hero-1.jpg" alt="hero-1.jpg">'), ['img-alt-filename']);
@@ -39,14 +39,16 @@ suite('a11y rules', () => {
     assert.deepEqual(found('<a name="top"></a>'), []);
     assert.deepEqual(found('<a role="button" tabindex="0">Menu</a>'), []);
     assert.deepEqual(found('<a aria-disabled="true">Next</a>'), []);
+    assert.deepEqual(found('<a tabindex="0">Menu</a>'), []);
     assert.deepEqual(found('<svg><a xlink:href="#x"><circle></circle></a></svg>'), []);
     assert.deepEqual(found('<a><img src="logo.png" alt="Home"></a>'), ['a-href']);
   });
   test('html-lang: a page with no language', () => {
-    assert.deepEqual(found('<html><body>x</body></html>'), ['html-lang']);
-    assert.deepEqual(found('<html lang="en"><body>x</body></html>'), []);
-    assert.deepEqual(found('<html lang="en-GB" dir="rtl"><body>x</body></html>'), []);
-    assert.deepEqual(found('<html lang=""><body>x</body></html>'), ['html-lang']);
+    assert.deepEqual(found('<html><head><title>t</title></head><body>x</body></html>'), ['html-lang']);
+    assert.deepEqual(found('<html lang="en"><head><title>t</title></head><body>x</body></html>'), []);
+    assert.deepEqual(found('<html lang="en-GB" dir="rtl"><head><title>t</title></head><body>x</body></html>'), []);
+    assert.deepEqual(found('<html lang=""><head><title>t</title></head><body>x</body></html>'), ['html-lang']);
+    assert.deepEqual(found('<html lang=" "><head><title>t</title></head><body>x</body></html>'), ['html-lang']);
     assert.deepEqual(found('<section><h1>Fragment</h1></section>'), []);
     assert.deepEqual(found('<div lang="">x</div>'), []);
   });
@@ -59,7 +61,14 @@ suite('a11y rules', () => {
       [],
     );
     assert.deepEqual(found('<iframe src="/x" title=""></iframe>'), ['iframe-title']);
-    assert.deepEqual(found('<iframe src="/x" aria-hidden="true"></iframe>'), []);
+    // aria-hidden takes the frame from a screen reader but not from the tab order: that is its own finding.
+    assert.deepEqual(found('<iframe src="/x" aria-hidden="true"></iframe>'), ['aria-hidden-focus']);
+    assert.deepEqual(found('<iframe src="/x" aria-hidden="true" tabindex="-1"></iframe>'), []);
+    // Out of the tab order, a frame is one nobody lands in; the ACT rule leaves it alone too.
+    assert.deepEqual(found('<iframe src="/x" tabindex="-1"></iframe>'), []);
+    assert.deepEqual(found('<iframe src="/x" title=" "></iframe>'), ['iframe-title']);
+    // A frame can be tabbed to, so the browser ignores role="none" on it.
+    assert.deepEqual(found('<iframe src="/x" role="none"></iframe>'), ['iframe-title', 'role-presentation-conflict']);
   });
   test('empty-heading: a heading that announces nothing', () => {
     assert.deepEqual(found('<h1></h1>'), ['empty-heading']);
@@ -120,6 +129,9 @@ suite('a11y rules', () => {
     assert.deepEqual(found('<button type="button" aria-hidden="true" tabindex="-1"></button>'), []);
     assert.deepEqual(found('<button type="button" title="Close"></button>'), []);
     assert.deepEqual(found('<button type="button"><span></span>Save</button>'), []);
+    // A script's text is code, and a <noscript>'s is never shown: neither names anything.
+    assert.deepEqual(found('<button><script>save()</script></button>'), ['empty-button']);
+    assert.deepEqual(found('<button><noscript>Save</noscript></button>'), ['empty-button']);
   });
   test('empty-title: an empty <title>', () => {
     assert.deepEqual(found('<title></title>'), ['empty-title']);
@@ -144,7 +156,10 @@ suite('a11y rules', () => {
     assert.deepEqual(found('<label for="e">Email</label><input id="e" type="email">'), []);
   });
   test('label-for: a for= pointing at something that is not a control', () => {
-    assert.deepEqual(found('<label for="w">Email</label><div id="w"><input id="e" type="email"></div>'), ['label-for']);
+    assert.deepEqual(found('<label for="w">Email</label><div id="w"><input id="e" type="email"></div>'), [
+      'field-label', // the input the label was meant for is left without a name
+      'label-for',
+    ]);
     assert.deepEqual(
       found(
         '<label for="f">Colour</label><fieldset id="f"><input id="r" type="radio" name="c" aria-label="Red"></fieldset>',
@@ -174,11 +189,30 @@ suite('a11y rules', () => {
   });
   test('aria-boolean: a true/false attribute given something else', () => {
     assert.deepEqual(found('<button aria-pressed="yes">Bold</button>'), ['aria-boolean']);
-    assert.deepEqual(found('<input aria-disabled="disabled">'), ['aria-boolean']);
-    assert.deepEqual(found('<div role="checkbox" aria-checked="mixed" tabindex="0"></div>'), []);
+    assert.deepEqual(found('<input aria-label="Name" aria-disabled="disabled">'), ['aria-boolean']);
+    assert.deepEqual(found('<div role="checkbox" aria-checked="mixed" tabindex="0" aria-label="x"></div>'), []);
     assert.deepEqual(found('<div aria-invalid="spelling"></div>'), []);
     assert.deepEqual(found('<button aria-expanded="FALSE">Menu</button>'), []);
     assert.deepEqual(found('<a href="/now" aria-current="page">Now</a>'), []);
+    // Each takes what the spec lists for it: `mixed` only on the two tristates, `undefined` only
+    // where it is written into the attribute's values.
+    assert.deepEqual(found('<button aria-expanded="mixed">Menu</button>'), ['aria-boolean']);
+    assert.deepEqual(found('<div aria-required="undefined" role="textbox" aria-label="x"></div>'), ['aria-boolean']);
+    assert.deepEqual(found('<button aria-pressed="undefined">Bold</button>'), []);
+    assert.deepEqual(found('<div aria-selected="undefined" role="option">x</div>'), []);
+  });
+  test('aria-value: a number, a whole number or a token the attribute does not take', () => {
+    assert.deepEqual(found('<div role="gridcell" aria-rowindex="2.5">x</div>'), ['aria-value']);
+    assert.deepEqual(found('<div role="slider" aria-label="x" aria-valuenow="two"></div>'), ['aria-value']);
+    assert.deepEqual(found('<button aria-haspopup="yes">Menu</button>'), ['aria-value']);
+    assert.deepEqual(found('<div aria-live="polite" aria-relevant="additions invalid">x</div>'), ['aria-value']);
+    // Numbers as ARIA writes them, and tokens in any case.
+    assert.deepEqual(found('<div role="gridcell" aria-rowindex="+2" aria-colindex="-1">x</div>'), []);
+    assert.deepEqual(found('<div role="slider" aria-label="x" aria-valuenow="2.5e1" aria-valuemin=".5"></div>'), []);
+    assert.deepEqual(found('<button aria-haspopup="MENU">Menu</button>'), []);
+    assert.deepEqual(found('<div aria-live="polite" aria-relevant="additions text">x</div>'), []);
+    // The message says what the browser makes of it: aria-current reads an unknown value as true.
+    assert.match(check('<a href="/" aria-current="yes">Home</a>')[0]!.message, /reads it as `true`/);
   });
   test('aria-live: a live region that is never announced', () => {
     assert.deepEqual(found('<div aria-live="true">Saved</div>'), ['aria-live']);
@@ -212,6 +246,27 @@ suite('a11y rules', () => {
     assert.deepEqual(found('<img hidden src="/a.png" alt=""><button aria-hidden="true">x</button>'), [
       'aria-hidden-focus',
     ]);
+    // Media with controls and editable content take focus as a control does.
+    assert.deepEqual(found('<video src="a.mp4" controls aria-hidden="true"></video>'), ['aria-hidden-focus']);
+    assert.deepEqual(found('<video src="a.mp4" aria-hidden="true"></video>'), []);
+    assert.deepEqual(found('<div contenteditable aria-hidden="true">x</div>'), ['aria-hidden-focus']);
+    assert.deepEqual(found('<div contenteditable="false" aria-hidden="true">x</div>'), []);
+  });
+  test('aria-hidden-focus: a closed <details> or <dialog> holds nothing the keyboard reaches yet', () => {
+    // Only its <summary> can be tabbed to, so that is the one stop that says nothing.
+    assert.deepEqual(
+      found('<div aria-hidden="true"><details><summary>More</summary><button>x</button></details></div>'),
+      ['aria-hidden-focus'],
+    );
+    assert.deepEqual(found('<div aria-hidden="true"><dialog><button>x</button></dialog></div>'), []);
+    assert.deepEqual(found('<div aria-hidden="true"><dialog open><button>x</button></dialog></div>'), [
+      'aria-hidden-focus',
+    ]);
+    // …and whatever follows it is reachable again.
+    assert.deepEqual(
+      found('<details><summary>More</summary>x</details><div aria-hidden="true"><button>b</button></div>'),
+      ['aria-hidden-focus'],
+    );
   });
   test('positive-tabindex: a tab order that no longer follows the page', () => {
     assert.deepEqual(found('<div tabindex="3">x</div>'), ['positive-tabindex']);
@@ -331,9 +386,9 @@ suite('role rules', () => {
     assert.deepEqual(found('<div role="image" aria-label="A map">x</div>'), []);
     assert.deepEqual(found('<div role="sectionheader">x</div>'), []);
     assert.deepEqual(found('<div role="sectionfooter">x</div>'), []);
-    assert.deepEqual(found('<mark role="mark">x</mark>'), []);
+    assert.deepEqual(found('<span role="mark">x</span>'), []);
   });
-  test('role-unknown: a fallback list is deliberate, and other vocabularies are not ours', () => {
+  test('role-unknown: a fallback list is deliberate, and DPUB and Graphics roles are roles', () => {
     // The browser takes the first role it knows, so a list with a real role in it is fine.
     assert.deepEqual(found('<div role="switch button" aria-checked="true">x</div>'), []);
     assert.deepEqual(found('<div role="doc-abstract">x</div>'), []); // DPUB-ARIA
@@ -341,9 +396,14 @@ suite('role rules', () => {
     // Never ARIA's, but WebKit reads it, for VoiceOver: not ignored, so not reported.
     assert.deepEqual(found('<span role="text">a<br>b</span>'), []);
     assert.deepEqual(found('<span role="nonsense text">x</span>'), []);
+    // No other browser takes it, so it is no role anyone can be sure of: a finding shows the tag alone.
+    assert.match(check('<input role="text">')[0]!.message, /^`<input>` has no label/);
     assert.deepEqual(found('<div role="nonsense alsononsense">x</div>'), ['role-unknown']);
+    // A typo in a role from those vocabularies is no role at all, and neither is a hyphenated ARIA one.
+    assert.deepEqual(found('<div role="doc-abstrct">x</div>'), ['role-unknown']);
+    assert.deepEqual(found('<div role="menu-item" tabindex="0">x</div>'), ['role-unknown']);
   });
-  test('role rules: a role from another vocabulary ends the check wherever it sits', () => {
+  test('role rules: the first role the browser knows is the one it takes, whatever vocabulary it is from', () => {
     // A browser that knows DPUB-ARIA takes doc-abstract here, so the role is not ignored…
     assert.deepEqual(found('<section role="nonsense doc-abstract">x</section>'), []);
     // …and it takes doc-abstract before checkbox, so no aria-checked is owed.
@@ -356,7 +416,16 @@ suite('role rules', () => {
     assert.deepEqual(found('<button role="button">x</button>'), ['role-redundant']);
     assert.deepEqual(found('<h2 role="heading">x</h2>'), ['role-redundant']);
     assert.deepEqual(found('<a href="/x" role="link">y</a>'), ['role-redundant']);
-    assert.deepEqual(found('<input type="checkbox" role="checkbox">'), ['role-redundant']);
+    assert.deepEqual(found('<input type="checkbox" role="checkbox" aria-label="x">'), ['role-redundant']);
+    // A text input with no `list` is a textbox, and a <mark> is a mark; <div> and <span> are generic.
+    assert.deepEqual(found('<input type="text" role="textbox" aria-label="x">'), ['role-redundant']);
+    assert.deepEqual(found('<input type="search" role="searchbox" aria-label="x">'), ['role-redundant']);
+    // A type with no role of its own is no textbox, so the role is news.
+    assert.deepEqual(found('<input type="password" role="textbox" aria-label="x">'), []);
+    assert.deepEqual(found('<input type="date" role="textbox" aria-label="x">'), []);
+    assert.deepEqual(found('<mark role="mark">x</mark>'), ['role-redundant']);
+    assert.deepEqual(found('<div role="generic">x</div>'), ['role-redundant']);
+    assert.deepEqual(found('<img src="a.png" alt="" role="presentation">'), ['role-redundant']);
     // Changing an element's role is the whole point of the attribute.
     assert.deepEqual(found('<ul role="tablist"><li role="tab">x</li></ul>'), []);
     assert.deepEqual(found('<a role="button" href="/x">y</a>'), []);
@@ -370,7 +439,8 @@ suite('role rules', () => {
     // Inside an <article>, an unnamed <aside> is generic: the role is what makes it a landmark.
     assert.deepEqual(found('<article><h2>t</h2><aside role="complementary">x</aside></article>'), []);
     assert.deepEqual(found('<a role="link">y</a>'), []); // no href, so no implicit link to be redundant with
-    assert.deepEqual(found('<input type="text" role="textbox">'), []);
+    // With a `list`, a text input is a combobox only if the list names a <datalist>.
+    assert.deepEqual(found('<input type="text" list="c" role="textbox" aria-label="x">'), []);
     // An <option> is an option only in a <select> or a <datalist>. Anywhere else the role is news.
     assert.deepEqual(
       found('<div role="listbox" aria-label="x"><option role="option" aria-selected="false">A</option></div>'),
@@ -379,7 +449,7 @@ suite('role rules', () => {
   });
   test('role-redundant: <html> is not a document', () => {
     // Its role is generic, like a <div>'s: the document role belongs to the page, not the element.
-    assert.deepEqual(found('<html lang="en" role="document"><body>x</body></html>'), []);
+    assert.deepEqual(found('<html lang="en" role="document"><head><title>t</title></head><body>x</body></html>'), []);
   });
   test('role-redundant: a list may restate its role', () => {
     // Safari drops the list role from a list styled `list-style: none`, and role="list" is how you
@@ -410,16 +480,27 @@ suite('role rules', () => {
   test('role-redundant: a <select> settles its own role from multiple and size', () => {
     // Without this, role="combobox" here reports a missing aria-expanded the element provides
     // itself. The markup settles which it is, so both directions are checked.
-    assert.deepEqual(found('<select role="combobox"><option>a</option></select>'), ['role-redundant']);
-    assert.deepEqual(found('<select multiple role="listbox"><option>a</option></select>'), ['role-redundant']);
-    assert.deepEqual(found('<select size="4" role="listbox"><option>a</option></select>'), ['role-redundant']);
-    assert.deepEqual(found('<select size="1" role="listbox"><option>a</option></select>'), []);
-    assert.deepEqual(found('<select role="listbox"><option>a</option></select>'), []);
+    assert.deepEqual(found('<select aria-label="x" role="combobox"><option>a</option></select>'), ['role-redundant']);
+    assert.deepEqual(found('<select multiple aria-label="x" role="listbox"><option>a</option></select>'), [
+      'role-redundant',
+    ]);
+    assert.deepEqual(found('<select size="4" aria-label="x" role="listbox"><option>a</option></select>'), [
+      'role-redundant',
+    ]);
+    assert.deepEqual(found('<select size="1" aria-label="x" role="listbox"><option>a</option></select>'), []);
+    assert.deepEqual(found('<select aria-label="x" role="listbox"><option>a</option></select>'), []);
     // `size` reads as the browser reads it, not as Number() does: `2px` is two rows, `1e3` is one.
-    assert.deepEqual(found('<select size="2px" role="listbox"><option>a</option></select>'), ['role-redundant']);
-    assert.deepEqual(found('<select size="2px" role="combobox" aria-expanded="false"><option>a</option></select>'), []);
-    assert.deepEqual(found('<select size="1e3" role="combobox"><option>a</option></select>'), ['role-redundant']);
-    assert.deepEqual(found('<select size="1e3" role="listbox"><option>a</option></select>'), []);
+    assert.deepEqual(found('<select size="2px" aria-label="x" role="listbox"><option>a</option></select>'), [
+      'role-redundant',
+    ]);
+    assert.deepEqual(
+      found('<select size="2px" aria-label="x" role="combobox" aria-expanded="false"><option>a</option></select>'),
+      [],
+    );
+    assert.deepEqual(found('<select size="1e3" aria-label="x" role="combobox"><option>a</option></select>'), [
+      'role-redundant',
+    ]);
+    assert.deepEqual(found('<select size="1e3" aria-label="x" role="listbox"><option>a</option></select>'), []);
   });
   test('role-required-props: a role with no state to read', () => {
     assert.deepEqual(found('<div role="checkbox" aria-label="x">y</div>'), ['role-required-props']);
@@ -438,42 +519,56 @@ suite('role rules', () => {
   });
   test('role-required-props: not where the element brings the state itself', () => {
     // Given its own role back, an element reports its own state. That is role-redundant's business.
-    assert.deepEqual(found('<input type="checkbox" role="checkbox">'), ['role-redundant']);
-    assert.deepEqual(found('<input type="range" role="slider">'), ['role-redundant']);
+    assert.deepEqual(found('<input type="checkbox" role="checkbox" aria-label="x">'), ['role-redundant']);
+    assert.deepEqual(found('<input type="range" role="slider" aria-label="x">'), ['role-redundant']);
     // A type with spaces round it is no type the browser knows, so this is a text input, and a text
     // input given the checkbox role owes it its state.
-    assert.deepEqual(found('<input type=" checkbox " role="checkbox">'), ['role-required-props']);
+    assert.deepEqual(found('<input type=" checkbox " role="checkbox" aria-label="x">'), ['role-required-props']);
     // Given another role, a checkbox or radio button still reports its checkedness, and ARIA in HTML
     // forbids aria-checked on one. This is the native switch.
-    assert.deepEqual(found('<input type="checkbox" role="switch">'), []);
-    assert.deepEqual(found('<input type="checkbox" role="switch" checked>'), []);
-    assert.deepEqual(found('<input type="checkbox" role="menuitemcheckbox">'), []);
-    assert.deepEqual(found('<input type="radio" role="menuitemradio">'), []);
-    assert.deepEqual(found('<input type="range" role="scrollbar">'), []);
+    assert.deepEqual(found('<input type="checkbox" role="switch" aria-label="x">'), []);
+    assert.deepEqual(found('<input type="checkbox" role="switch" checked aria-label="x">'), []);
+    assert.deepEqual(found('<input type="checkbox" role="menuitemcheckbox" aria-label="x">'), []);
+    assert.deepEqual(found('<input type="radio" role="menuitemradio" aria-label="x">'), []);
+    assert.deepEqual(found('<input type="range" role="scrollbar" aria-label="x">'), []);
+    assert.deepEqual(found('<input type="number" role="slider" aria-label="x">'), []);
     // A text input with a `list` is a combobox already, and shows its own suggestions.
     assert.deepEqual(found('<input list="c" role="combobox" aria-label="City"><datalist id="c"></datalist>'), []);
     assert.deepEqual(
       found('<input type="search" list="c" role="combobox" aria-label="City"><datalist id="c"></datalist>'),
       [],
     );
-    assert.deepEqual(found('<input type="checkbox" list="c" role="switch"><datalist id="c"></datalist>'), []);
+    assert.deepEqual(
+      found('<input type="checkbox" list="c" role="switch" aria-label="x"><datalist id="c"></datalist>'),
+      [],
+    );
     // Without one, this is the ARIA 1.2 combobox, which owes its aria-expanded.
     assert.deepEqual(found('<input type="text" role="combobox" aria-label="City">'), ['role-required-props']);
     // Elements with no such state of their own still owe it.
     assert.deepEqual(found('<button role="switch">x</button>'), ['role-required-props']);
-    assert.deepEqual(found('<input role="switch">'), ['role-required-props']);
+    assert.deepEqual(found('<input role="switch" aria-label="x">'), ['role-required-props']);
     assert.deepEqual(found('<div role="button" aria-label="x">y</div>'), []); // needs no state
+    // A custom element can carry its state through ElementInternals, which the markup never shows.
+    assert.deepEqual(found('<my-switch role="switch"></my-switch>'), []);
   });
-  test('role-presentation-interactive: a presentational role the keyboard still reaches', () => {
-    assert.deepEqual(found('<button role="presentation">x</button>'), ['role-presentation-interactive']);
-    assert.deepEqual(found('<a href="/x" role="none">y</a>'), ['role-presentation-interactive']);
-    assert.deepEqual(found('<div tabindex="0" role="presentation">x</div>'), ['role-presentation-interactive']);
+  test('role-presentation-conflict: a presentational role the browser has to ignore', () => {
+    assert.deepEqual(found('<button role="presentation">x</button>'), ['role-presentation-conflict']);
+    assert.deepEqual(found('<a href="/x" role="none">y</a>'), ['role-presentation-conflict']);
+    assert.deepEqual(found('<div tabindex="0" role="presentation">x</div>'), ['role-presentation-conflict']);
     // Not focusable, so the role is honoured and there is nothing to report.
     assert.deepEqual(found('<img src="c.jpg" role="presentation">'), []);
     assert.deepEqual(found('<div role="presentation">x</div>'), []);
     assert.deepEqual(found('<button disabled role="presentation">x</button>'), []);
     assert.deepEqual(found('<a role="none" id="x">y</a>'), []); // no href, so not a link and not focusable
     assert.deepEqual(found('<input type="HIDDEN" role="presentation">'), []); // the type reads case-insensitively
+    // A global ARIA attribute undoes a presentational role too, as it does `alt=""`.
+    assert.deepEqual(found('<nav role="presentation" aria-label="Main"><a href="/">Home</a></nav>'), [
+      'role-presentation-conflict',
+    ]);
+    assert.deepEqual(found('<img src="a.png" alt="" aria-labelledby="l"><span id="l">Logo</span>'), [
+      'role-presentation-conflict',
+    ]);
+    assert.deepEqual(found('<img src="a.png" alt="" aria-hidden="false">'), []); // not a global one
   });
   test('role rules stay out of hidden subtrees, like every other rule', () => {
     assert.deepEqual(found('<div hidden><div role="buton">x</div></div>'), []);

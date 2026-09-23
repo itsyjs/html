@@ -6,7 +6,7 @@ import type { Problem, Finding, RuleSet, Visitor, Report, A11yRule, A11yOptions,
 ```
 
 Everything the library checks lives here: the [markup check](/guide/checks) over a rendered page,
-[twenty-three accessibility rules](#accessibility) that run by default, and the
+[twenty-five accessibility rules](#accessibility) that run by default, and the
 [hook for your own rules](#your-own-rules). All of it is development-only — the production build
 compiles `check` down to a function that immediately returns an empty array, 28 bytes.
 
@@ -104,31 +104,33 @@ of `check()`.
 
 An empty list means these rules found nothing, not that the page is accessible.
 
-| rule                            | fires on                                                             |
-| ------------------------------- | -------------------------------------------------------------------- |
-| `img-alt`                       | `<img>` with no `alt`                                                |
-| `img-alt-filename`              | `alt` that is only a file name, like `photo-3.png`                   |
-| `a-href`                        | `<a>` with no `href`, `id`, `name`, `tabindex` or `role`             |
-| `html-lang`                     | `<html>` with no `lang`                                              |
-| `iframe-title`                  | `<iframe>` with no `title`                                           |
-| `empty-heading`                 | `<h1>`…`<h6>` with no text and nothing naming it                     |
-| `empty-link`                    | `<a href>` with no text and nothing naming it                        |
-| `empty-button`                  | `<button>` with no text and nothing naming it                        |
-| `empty-title`                   | `<title>` with no text                                               |
-| `label-control`                 | `<label>` with no `for` and no control inside it                     |
-| `label-for`                     | `for=` pointing at something that is not a form control              |
-| `aria-unknown`                  | an `aria-*` name that does not exist                                 |
-| `aria-empty`                    | an `aria-*` attribute or `role` with an empty value                  |
-| `aria-boolean`                  | a true/false ARIA attribute given something else                     |
-| `aria-live`                     | `aria-live` outside `polite`, `assertive` and `off`                  |
-| `aria-hidden-focus`             | `aria-hidden="true"` on something the keyboard can tab to            |
-| `positive-tabindex`             | `tabindex` above zero                                                |
-| `figcaption-parent`             | `<figcaption>` that is not a direct child of `<figure>`              |
-| `misplaced-scope`               | `scope` on anything but `<th>`                                       |
-| `role-unknown`                  | a `role` that is not an ARIA role                                    |
-| `role-redundant`                | a `role` the element already had                                     |
-| `role-required-props`           | a role with no state to read, like `checkbox` with no `aria-checked` |
-| `role-presentation-interactive` | `role="presentation"` on something focusable                         |
+| rule                         | fires on                                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `img-alt`                    | an image the browser exposes with no name: `<img>` with no `alt`, `<input type="image">`, `role="img"` |
+| `img-alt-filename`           | `alt` that is only a file name, like `photo-3.png`                                                     |
+| `a-href`                     | `<a>` with no `href`, `id`, `name`, `tabindex` or `role`                                               |
+| `html-lang`                  | `<html>` with no `lang`, or only whitespace in it                                                      |
+| `iframe-title`               | an `<iframe>` in the tab order with no `title`                                                         |
+| `empty-heading`              | a heading — `<h1>`…`<h6>` or `role="heading"` — with no text and nothing naming it                     |
+| `empty-link`                 | a link — `<a href>` or `role="link"` — with no text and nothing naming it; `<area href>` with no `alt` |
+| `empty-button`               | a button — `<button>`, `role="button"`, `<input type="button">` — with no text and nothing naming it   |
+| `empty-title`                | the page's `<title>` with no text, or a whole page with no `<title>` at all                            |
+| `field-label`                | a form field with no `<label>`, `aria-label`, `aria-labelledby` or `title`                             |
+| `label-control`              | `<label>` with no `for` and no control inside it                                                       |
+| `label-for`                  | `for=` pointing at something that is not a form control                                                |
+| `aria-unknown`               | an `aria-*` name that does not exist                                                                   |
+| `aria-empty`                 | an `aria-*` attribute or `role` with an empty value                                                    |
+| `aria-boolean`               | a true/false ARIA attribute given something else                                                       |
+| `aria-value`                 | an ARIA number, whole number or token given a value it does not take                                   |
+| `aria-live`                  | `aria-live` outside `polite`, `assertive` and `off`                                                    |
+| `aria-hidden-focus`          | something the keyboard can tab to, on or inside `aria-hidden="true"`                                   |
+| `positive-tabindex`          | `tabindex` above zero                                                                                  |
+| `figcaption-parent`          | `<figcaption>` that is not a direct child of `<figure>`                                                |
+| `misplaced-scope`            | `scope` on anything but `<th>`                                                                         |
+| `role-unknown`               | a `role` that is not an ARIA, DPUB-ARIA or Graphics ARIA role                                          |
+| `role-redundant`             | a `role` the element already had                                                                       |
+| `role-required-props`        | a role with no state to read, like `checkbox` with no `aria-checked`                                   |
+| `role-presentation-conflict` | `role="none"` or `alt=""` the browser must ignore: on something focusable, or with a global `aria-*`   |
 
 ```ts run
 check('<img src="cat.jpg"><button><svg></svg></button><nav role="navigation">x</nav>');
@@ -140,7 +142,7 @@ check('<img src="cat.jpg"><button><svg></svg></button><nav role="navigation">x</
 check(view, { a11y: { without: ['img-alt-filename', 'positive-tabindex'] } });
 ```
 
-The names are checked against `A11yRule`, the union of the twenty-three above, so a typo is a type
+The names are checked against `A11yRule`, the union of the twenty-five above, so a typo is a type
 error rather than a rule that quietly stays on:
 
 ```ts
@@ -173,14 +175,24 @@ A rule that fires on correct markup is worse than one that misses a bug, because
 is all it takes for someone to switch the whole thing off. So the rules stay quiet whenever they
 cannot be sure:
 
-- Nothing inside `hidden`, `inert`, `display:none`, `aria-hidden="true"` or `<template>` is
-  reported. None of it reaches the person the rules are about.
-- A custom element can hold anything, so it silences the rule around it — a `<my-input>` inside a
-  `<label>` counts as the control, and a `<my-icon>` inside a `<button>` counts as a name.
+- Nothing inside `hidden`, `inert`, `display: none`, `visibility: hidden`, `aria-hidden="true"` or
+  `<template>` is reported. None of it reaches the person the rules are about — except that the
+  keyboard still reaches what `aria-hidden` hides, which is what `aria-hidden-focus` is for.
+- Each rule goes by the role the browser gives the element, not by its tag. `<span role="button">`
+  is a button, `<a href role="doc-biblioref">` is a link, and `<h2 role="none">` is no heading.
 - `alt=""`, `role="presentation"` and `role="none"` are how you say an image is decoration, and all
-  three are respected.
+  three are respected — until the browser has to ignore them, on anything focusable or anything
+  with a global ARIA attribute such as `aria-label`. Then the element keeps its role, and the rules
+  read it as what it is.
+- A custom element can hold anything, so it silences the rule around it — a `<my-input>` inside a
+  `<label>` counts as the control, a `<my-icon>` inside a `<button>` counts as a name, and a custom
+  element with `role="switch"` may carry its `aria-checked` through `ElementInternals`.
 - A name from `aria-label`, `aria-labelledby` or `title`, on the element or on anything inside it,
-  counts as text. `<button><img src="i.svg" alt="Delete"></button>` is silent.
+  counts as text. `<button><img src="i.svg" alt="Delete"></button>` is silent. A name from
+  `aria-labelledby` is taken on trust: the rules check that it says something, not what the element
+  it points at holds, and a reference to an id that is not on the page is [code 15](/reference/errors#e15).
+- Text counts only where someone reads it: not inside `aria-hidden`, and not in a `<script>` or a
+  `<style>`.
 - The role tables hold only the mappings the markup settles on its own. `<header role="banner">`,
   `<aside role="complementary">`, `<li role="listitem">` and `<option role="option">` depend on an
   ancestor, so none of them is reported as redundant.
@@ -191,11 +203,29 @@ cannot be sure:
 - An `<input>` keeps its own state whatever role it is given. `<input type="checkbox" role="switch">`
   is the native switch, and needs no `aria-checked` — ARIA in HTML forbids one. A text input with
   a `list` is a combobox already, and needs no `aria-expanded`.
-- `role` takes a fallback list, and the browser uses the first entry it knows. A role from another
-  vocabulary, such as DPUB-ARIA's `doc-*`, or WebKit's `role="text"`, may be that entry, so the
-  role rules stop at one.
+- `role` takes a fallback list, and the browser uses the first entry it knows. WebKit's
+  `role="text"` is known to WebKit alone, so an element that carries it has no role the rules can be
+  sure of, and they leave it be.
 - The rules that need the full role-to-properties graph — which `aria-*` each role allows — are
   left out. That table is the largest and the easiest one to be wrong with.
+
+### Held to outside sources
+
+The rules are not checked against their own idea of what is right. The test suite holds them to:
+
+- **The W3C ACT Rules.** Every example the ACT Rules Community Group publishes for a rule here runs
+  through `check()`: a `failed` example must be reported, a `passed` or `inapplicable` one must
+  not be.
+- **ARIA and HTML-AAM**, through aria-query, which is generated from them. The role, attribute and
+  value tables are compared entry by entry.
+
+Where the rules part ways with either on purpose — ARIA 1.3 has moved on from what the source
+encodes, or the markup alone cannot settle the answer — the difference is listed in the suite with
+its reason, and one that stops being a difference fails it. The markup check is held the same way:
+over the html5lib parser suite, whenever it reports nothing, or only what it repairs as the browser
+does, the tree it read is the one a spec-conformant parser builds; and over every three-deep nesting
+of the elements the parser treats specially, it reports a problem exactly when that parser changes
+what is written.
 
 ## Your own rules
 
@@ -218,7 +248,7 @@ type Report = (rule: string, message: string, at: number) => void;
 
 interface Visitor {
   open?: (tag: string, attrs: ReadonlyMap<string, string>, at: number, ancestors: readonly string[]) => void;
-  text?: (content: string, at: number) => void;
+  text?: (content: string, at: number, ancestors: readonly string[]) => void;
   close?: (tag: string, at: number, hadText: boolean) => void;
   end?: (ids: ReadonlyMap<string, number>) => void;
 }
@@ -232,15 +262,18 @@ itself.
   present with an empty value. `ancestors` is outermost first, and holds what is _really_ open:
   anything the browser would have closed already is closed. Both are yours to keep. A void element
   opens and never closes.
-- **`text`** — a run of text, as written, and never empty. Entities are not decoded, and a `<` that
-  opens no tag is part of the text, as the browser reads it. It fires for the body of `<script>`,
-  `<style>`, `<textarea>` and `<title>` too.
+- **`text`** — a run of text, as written, and never empty, with its `ancestors` as `open` gives
+  them. Entities are not decoded, and a `<` that opens no tag is part of the text, as the browser
+  reads it. A comment ends a run, so `TO<!-- -->DO` arrives as two. It fires for the body of every
+  element the browser reads as text too: `<script>`, `<style>`, `<textarea>`, `<title>`,
+  `<iframe>`, `<noscript>`, `<noembed>`, `<noframes>`, `<xmp>` and `<plaintext>`.
 - **`close`** — `at` is where the element _started_, so it pairs with `open`. `hadText` says
   whether it held any non-whitespace.
 - **`end`** — every id on the page and where it was seen.
 
 Pass an array to run several. Findings from all of them are sorted into page order with the markup
-problems, so the list reads top to bottom whatever produced it.
+problems, so the list reads top to bottom whatever produced it. An entry that is not a function is
+left out, so `rules: [strict && house]` reads as it looks.
 
 Your rule names are yours, so passing `rules` widens the result to `Finding<string>`.
 

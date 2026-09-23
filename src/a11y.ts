@@ -8,16 +8,20 @@
 // The rule names and most of the reasoning come from Svelte's a11y pass (MIT), which took them
 // from eslint-plugin-jsx-a11y.
 //
-// The role tables below are written out rather than taken from aria-query and axobject-query,
-// which are 10.9 kB brotli between them and would be a dependency in a library that has none.
-// They cost nothing to ship — `check()` compiles this whole file away in production — so what
-// they are trimmed against is false positives, not bytes: a mapping that depends on an ancestor
-// or on another attribute is left out rather than guessed at. The one rule still missing is
-// "this `aria-*` is not allowed on this role": it needs the full role-to-properties graph, which
-// is both the largest table and the easiest one to be wrong with.
+// Two oracles hold this file to outside sources, so a review argues with a failing case rather than
+// an opinion. In the itsy-html-spec repository, act.test.ts runs every example the W3C ACT Rules
+// group publishes for the rules here, and tables.test.ts checks the tables below against
+// aria-query, which is generated from ARIA and HTML-AAM. Every place this file differs from either
+// on purpose is listed there, with the reason.
+//
+// The tables are written out rather than imported: aria-query and axobject-query are 10.9 kB brotli
+// between them and would be a dependency in a library that has none. They cost nothing to ship —
+// `check()` compiles this whole file away in production. The one rule still missing is "this
+// `aria-*` is not allowed on this role": it needs the full role-to-properties graph, which is both
+// the largest table and the easiest one to be wrong with.
 //
 // This file is only ever reached from `check()`, inside its `__DEV__` branch.
-import type { RuleSet, Visitor } from './audit.ts';
+import { type RuleSet, type Visitor, VOID } from './audit.ts';
 
 type Attrs = ReadonlyMap<string, string>;
 /**
@@ -28,29 +32,96 @@ type A11yReport = (rule: A11yRule, message: string, at: number) => void;
 
 const set = (names: string) => new Set(names.split(' '));
 
-// Every ARIA attribute name, without its `aria-` prefix. A name outside this list does nothing at
-// all — no browser and no screen reader reads it — so a typo is silent. That is what the list buys.
-const ARIA = /* @__PURE__ */ set(
+// The tables are exported for itsy-html-spec's tables.test.ts, and for nothing else.
+
+/**
+ * Every ARIA attribute name, without its `aria-` prefix. A name outside this list does nothing at
+ * all — no browser and no screen reader reads it — so a typo is silent. That is what the list buys.
+ * @internal
+ */
+export const ARIA = /* @__PURE__ */ set(
   'activedescendant atomic autocomplete braillelabel brailleroledescription busy checked colcount colindex colindextext colspan controls current describedby description details disabled dropeffect errormessage expanded flowto grabbed haspopup hidden invalid keyshortcuts label labelledby level live modal multiline multiselectable orientation owns placeholder posinset pressed readonly relevant required roledescription rowcount rowindex rowindextext rowspan selected setsize sort valuemax valuemin valuenow valuetext',
 );
-// The ones that take only true or false. `mixed` and `undefined` are legal literals too, and the
-// token attributes (`aria-current`, `aria-haspopup`, `aria-invalid`) are deliberately not here:
-// their value sets happen to include `true`, so checking them as booleans would be wrong.
-const BOOL = /* @__PURE__ */ set(
-  'atomic busy checked disabled expanded grabbed hidden modal multiline multiselectable pressed readonly required selected',
+/**
+ * The true/false attributes, and the values each takes: `undefined` where the spec lists it, and
+ * `mixed` on the two tristates. Any other value reads as if the attribute were not there.
+ * @internal
+ */
+export const BOOLEAN: Record<string, string> = {
+  atomic: 'true false',
+  busy: 'true false',
+  checked: 'true false mixed undefined',
+  disabled: 'true false',
+  expanded: 'true false undefined',
+  grabbed: 'true false undefined',
+  hidden: 'true false undefined',
+  modal: 'true false',
+  multiline: 'true false',
+  multiselectable: 'true false',
+  pressed: 'true false mixed undefined',
+  readonly: 'true false',
+  required: 'true false',
+  selected: 'true false undefined',
+};
+/**
+ * The token attributes: the values each takes, and what the browser reads a value outside them as.
+ * `aria-current` and `aria-invalid` read an unknown value as `true`; the rest fall back to their
+ * default. `aria-live` has its own rule, with its own consequence.
+ * @internal
+ */
+export const TOKENS: Record<string, [values: string, fallback: string]> = {
+  autocomplete: ['inline list both none', 'none'],
+  current: ['page step location date time true false', 'true'],
+  dropeffect: ['copy execute link move none popup', 'none'],
+  haspopup: ['false true menu listbox tree grid dialog', 'false'],
+  invalid: ['grammar false spelling true', 'true'],
+  orientation: ['horizontal vertical undefined', 'undefined'],
+  relevant: ['additions all removals text', 'additions text'],
+  sort: ['ascending descending none other', 'none'],
+};
+/** @internal The two token attributes that take a space-separated list. */
+export const LISTS = /* @__PURE__ */ set('dropeffect relevant');
+/** @internal */
+export const LIVE = /* @__PURE__ */ set('polite assertive off');
+/** @internal The attributes that take a whole number. */
+export const INTEGER = /* @__PURE__ */ set(
+  'colcount colindex colspan level posinset rowcount rowindex rowspan setsize',
 );
-const BOOL_OK = /* @__PURE__ */ set('true false mixed undefined');
-const LIVE = /* @__PURE__ */ set('polite assertive off');
+/** @internal The attributes that take any number. */
+export const NUMBER = /* @__PURE__ */ set('valuemax valuemin valuenow');
+/**
+ * The global ARIA attributes, less `aria-hidden`. On an element that carries any of them, the
+ * browser ignores `role="none"` and `role="presentation"`, as it does on anything focusable.
+ * @internal
+ */
+export const GLOBALS = /* @__PURE__ */ set(
+  'atomic braillelabel brailleroledescription busy controls current describedby description details dropeffect flowto grabbed keyshortcuts label labelledby live owns relevant roledescription',
+);
+
 // What a `<label>` can label, and what a `for` may point at.
 const LABELABLE = /* @__PURE__ */ set('button input meter output progress select textarea');
 // Form controls the keyboard reaches, unless they are disabled.
 const CONTROL = /* @__PURE__ */ set('button select textarea input');
+// `<input>` types that are not a field someone fills in: a button of some kind, or nothing at all.
+const NOT_A_FIELD = /* @__PURE__ */ set('hidden submit reset button image');
+// `<input>` types whose `placeholder` counts as a last-resort name, as HTML-AAM has it.
+const PLACEHOLDER = /* @__PURE__ */ set('text search url tel email password number');
+// `<input>` types with no ARIA role at all. Every type not listed anywhere is read as text.
+const NO_ROLE = /* @__PURE__ */ set('color date datetime-local file hidden month password time week');
+// The roles ACT counts as form fields. The first five take their name from their content too.
+const FIELD_ROLES = /* @__PURE__ */ set(
+  'checkbox radio switch menuitemcheckbox menuitemradio combobox listbox searchbox slider spinbutton textbox',
+);
+const NAMED_BY_CONTENT = /* @__PURE__ */ set('checkbox radio switch menuitemcheckbox menuitemradio');
+// Elements whose text is not text anyone reads on the page.
+const SILENT = /* @__PURE__ */ set('script style template noscript iframe noembed noframes');
 
 const TEXT = /\S/;
 const TRUE = /^\s*true\s*$/i;
-const NONE = /display\s*:\s*none/i;
-const DECOR = /^\s*(presentation|none)\b/i;
+const HIDDEN = /display\s*:\s*none|visibility\s*:\s*(hidden|collapse)/i;
 const HEADING = /^h[1-6]$/;
+// A tabindex the browser can read: an optional sign, then digits. Anything else it ignores.
+const TABINDEX = /^\s*[-+]?\d/;
 // A tab stop the browser puts before everything else: 0 or more zeroes then 1-9. `0`, `-1`, `0x2`
 // and `.5` all read as zero or less and are correct.
 const AHEAD = /^\s*\+?0*[1-9]/;
@@ -59,26 +130,46 @@ const INTAB = /^\s*\+?\d/;
 // A `<select size>` the browser reads as more than one row. Its integers, not `Number()`'s: `2px`
 // is 2 and `1e3` is 1.
 const ROWS = /^\s*\+?0*(?:[2-9]|[1-9]\d)/;
+const WHOLE = /^[-+]?\d+$/;
+const DECIMAL = /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i;
 // An alt that is the file it came from: "IMG_1024.JPG", "photo-3.png", "dsc00042".
 const FILENAME = /^\s*(\S+\.(jpe?g|png|gif|svg|webp|avif|bmp)|(img|dsc|image|photo|screenshot)[-_]?\d+)\s*$/i;
 
-// Every ARIA role that may be written on an element, the ARIA 1.3 draft's included. The abstract
-// ones (`widget`, `section`, `input`, …) are left out: they exist only in the taxonomy and do
-// nothing in markup. A role from another vocabulary is not here either; see `outside` below.
-const ROLES = /* @__PURE__ */ set(
-  'alert alertdialog application article banner blockquote button caption cell checkbox code columnheader combobox comment complementary contentinfo definition deletion dialog directory document emphasis feed figure form generic grid gridcell group heading image img insertion link list listbox listitem log main mark marquee math menu menubar menuitem menuitemcheckbox menuitemradio meter navigation none note option paragraph presentation progressbar radio radiogroup region row rowgroup rowheader scrollbar search searchbox sectionfooter sectionheader separator slider spinbutton status strong subscript suggestion superscript switch tab table tablist tabpanel term textbox time timer toolbar tooltip tree treegrid treeitem',
+/**
+ * Every role that may be written on an element: ARIA's, the 1.3 draft's included, DPUB-ARIA's
+ * `doc-*` and Graphics ARIA's `graphics-*`. The abstract ones (`widget`, `section`, `input`, …) are
+ * left out: they exist only in the taxonomy and do nothing in markup.
+ * @internal
+ */
+export const ROLES = /* @__PURE__ */ set(
+  'alert alertdialog application article banner blockquote button caption cell checkbox code columnheader combobox comment complementary contentinfo definition deletion dialog directory document emphasis feed figure form generic grid gridcell group heading image img insertion link list listbox listitem log main mark marquee math menu menubar menuitem menuitemcheckbox menuitemradio meter navigation none note option paragraph presentation progressbar radio radiogroup region row rowgroup rowheader scrollbar search searchbox sectionfooter sectionheader separator slider spinbutton status strong subscript suggestion superscript switch tab table tablist tabpanel term textbox time timer toolbar tooltip tree treegrid treeitem ' +
+    'doc-abstract doc-acknowledgments doc-afterword doc-appendix doc-backlink doc-biblioentry doc-bibliography doc-biblioref doc-chapter doc-colophon doc-conclusion doc-cover doc-credit doc-credits doc-dedication doc-endnote doc-endnotes doc-epigraph doc-epilogue doc-errata doc-example doc-footnote doc-foreword doc-glossary doc-glossref doc-index doc-introduction doc-noteref doc-notice doc-pagebreak doc-pagefooter doc-pageheader doc-pagelist doc-part doc-preface doc-prologue doc-pullquote doc-qna doc-subtitle doc-tip doc-toc ' +
+    'graphics-document graphics-object graphics-symbol',
 );
 
-// A token these tables cannot judge, so the role check stops at it rather than guess. A role from
-// another vocabulary — `doc-*` from DPUB-ARIA, `graphics-*` — carries a hyphen. `text` never made
-// it into ARIA, but WebKit reads it, for exactly the VoiceOver users it is written for.
-const outside = (token: string) => token.includes('-') || token === 'text';
+/**
+ * DPUB roles that are a kind of link or image, and ARIA 1.3's synonym for `img`: the rules that
+ * want a name from a link or an image want it from these too.
+ * @internal
+ */
+export const KIND: Record<string, string> = {
+  'doc-backlink': 'link',
+  'doc-biblioref': 'link',
+  'doc-glossref': 'link',
+  'doc-noteref': 'link',
+  'doc-cover': 'img',
+  image: 'img',
+};
+// The roles that make something an image the way SVG means it: named by its own `<title>` child.
+const GRAPHIC = /* @__PURE__ */ set('img graphics-document graphics-symbol');
 
-// The state a role cannot be read without. Only what ARIA requires outright is here: a rule that
-// fires on correct markup is worse than one that misses, and the conditional ones (`separator`
-// only when focusable, `option` inside a listbox) are exactly where that goes wrong. `spinbutton`
-// is not here either: ARIA asks for its `aria-valuenow` only when it has a value.
-const REQUIRED: Record<string, string> = {
+/**
+ * The state a role cannot be read without. Only what ARIA 1.3 requires outright is here: a rule
+ * that fires on correct markup is worse than one that misses. `separator` requires its
+ * `aria-valuenow` only when focusable, which `checkRole` settles from the markup.
+ * @internal
+ */
+export const REQUIRED: Record<string, string> = {
   checkbox: 'aria-checked',
   combobox: 'aria-expanded',
   heading: 'aria-level',
@@ -91,52 +182,68 @@ const REQUIRED: Record<string, string> = {
   switch: 'aria-checked',
 };
 
-// The role an element already carries, for the roles that the tag settles on its own. `<aside>`,
-// `<header>`, `<footer>`, `<li>`, `<td>`, `<th>` and `<option>` depend on an ancestor, and
-// `<section>` on having a name, so they are left out: a wrong "redundant" is a rule nobody keeps
-// on. Left out too, though their role never changes, are the elements CSS can take it from,
-// because restating it is how you put it back: Safari drops the list role from a `<ul>`, `<ol>` or
-// `<menu>` styled `list-style: none`, and a `<table>`, `<thead>`, `<tbody>`, `<tfoot>` or `<tr>`
-// given another `display` has lost its role in Chrome and Safari both, which is why every
-// responsive table restates them — its `<caption>` included, so that is left out as well. `<html>`
-// is not here because its role is `generic`, like a `<div>`'s: the document role belongs to the
-// page, not to the element. The tags whose own attributes settle it — `<a>`, `<input>`, `<select>`
-// — are handled in `implicitRole` below.
-const IMPLICIT: Record<string, string> = {
+/**
+ * The role an element already carries, for the roles that the tag settles on its own. The ones
+ * left out, and why — an ancestor decides some, and CSS can take the role from others, so
+ * restating it is how you put it back — are listed in itsy-html-spec's tables.test.ts. The tags whose own
+ * attributes settle it (`<a>`, `<img>`, `<input>`, `<select>`) are handled in `implicitRole` below.
+ * @internal
+ */
+export const IMPLICIT: Record<string, string> = {
+  address: 'group',
   article: 'article',
+  b: 'generic',
+  bdi: 'generic',
+  bdo: 'generic',
   blockquote: 'blockquote',
   button: 'button',
   code: 'code',
+  data: 'generic',
   datalist: 'listbox',
+  dd: 'definition',
   del: 'deletion',
   details: 'group',
   dfn: 'term',
   dialog: 'dialog',
+  div: 'generic',
+  dt: 'term',
   em: 'emphasis',
   fieldset: 'group',
   figure: 'figure',
   form: 'form',
+  hgroup: 'group',
   hr: 'separator',
+  i: 'generic',
   ins: 'insertion',
   main: 'main',
+  mark: 'mark',
   math: 'math',
   meter: 'meter',
   nav: 'navigation',
   optgroup: 'group',
   output: 'status',
   p: 'paragraph',
+  pre: 'generic',
   progress: 'progressbar',
+  q: 'generic',
+  samp: 'generic',
   search: 'search',
+  small: 'generic',
+  span: 'generic',
   strong: 'strong',
   sub: 'subscript',
   sup: 'superscript',
   textarea: 'textbox',
   time: 'time',
+  u: 'generic',
 };
 
-// `<input>` types whose role holds whatever else is on the tag. The text-like types are left out:
-// with a `list` attribute they are a combobox instead, and that is not worth a false positive.
-const INPUT: Record<string, string> = {
+/**
+ * `<input>` types whose role holds whatever else is on the tag. The text-like ones are handled in
+ * `implicitRole`: with a `list` they are a combobox only when it points at a `<datalist>`.
+ * @internal
+ */
+export const INPUT: Record<string, string> = {
   button: 'button',
   checkbox: 'checkbox',
   image: 'button',
@@ -147,10 +254,13 @@ const INPUT: Record<string, string> = {
   submit: 'button',
 };
 
-// The state an `<input>` reports for itself, whatever role it is given: a checkbox or radio button
-// its checkedness, a range or number its value. `<input type="checkbox" role="switch">` is the
-// native switch, and ARIA in HTML forbids the `aria-checked` a rule would otherwise ask it for.
-const NATIVE: Record<string, string> = {
+/**
+ * The state an `<input>` reports for itself, whatever role it is given: a checkbox or radio button
+ * its checkedness, a range or number its value. `<input type="checkbox" role="switch">` is the
+ * native switch, and ARIA in HTML forbids the `aria-checked` a rule would otherwise ask it for.
+ * @internal
+ */
+export const NATIVE: Record<string, string> = {
   checkbox: 'aria-checked',
   number: 'aria-valuenow',
   radio: 'aria-checked',
@@ -161,19 +271,54 @@ const NATIVE: Record<string, string> = {
 const inputType = (a: Attrs) => (a.get('type') ?? '').toLowerCase();
 
 /**
- * The state an `<input>` reports for itself, whatever role it is given. A text input with a `list`
- * is a combobox already, showing and hiding its own suggestions, so it has `aria-expanded` covered.
- * That goes by the `list` alone, whatever the type: telling apart the types that ignore it is not
- * worth a false positive, so a button with a `list` is let off too.
+ * The state an `<input>` reports for itself. A text input with a `list` is a combobox already,
+ * showing and hiding its own suggestions, so it has `aria-expanded` covered; a type with a state
+ * of its own reports that state instead, whatever `list` says.
  */
 const nativeState = (a: Attrs): string | undefined =>
   NATIVE[inputType(a)] ?? (a.has('list') ? 'aria-expanded' : undefined);
 
-/** The role this element already has, when the markup on its own settles it. */
+/** Can the keyboard tab to this element, going only by its own markup? */
+const focusable = (tag: string, a: Attrs) => {
+  const t = a.get('tabindex');
+  if (t !== undefined && TABINDEX.test(t)) return INTAB.test(t); // a tabindex the browser can read decides
+  if (tag === 'a' || tag === 'area') return a.has('href') || a.has('xlink:href');
+  if (tag === 'audio' || tag === 'video') return a.has('controls');
+  if (tag === 'summary' || tag === 'iframe') return true;
+  if (/^(|true|plaintext-only)$/i.test(a.get('contenteditable') ?? 'false')) return true;
+  return CONTROL.has(tag) && !a.has('disabled') && !(tag === 'input' && inputType(a) === 'hidden');
+};
+
+/** The first global ARIA attribute on the element, if it has one. */
+const global = (a: Attrs) => [...a.keys()].find((k) => k.startsWith('aria-') && GLOBALS.has(k.slice(5)));
+/** Does the browser ignore a presentational role here? It does on anything focusable, or anything with a global ARIA attribute. */
+const conflicted = (tag: string, a: Attrs) => focusable(tag, a) || global(a) !== undefined;
+
+/** The first token of `role` the browser knows, lowercased, with `presentation` read as its synonym `none`. */
+const explicitRole = (a: Attrs): string | undefined => {
+  // Splitting on whitespace leaves an empty token for any at either end, and no role is empty.
+  const known = (a.get('role') ?? '')
+    .toLowerCase()
+    .split(/\s+/)
+    .find((t) => ROLES.has(t) || t === 'text');
+  return known === 'presentation' ? 'none' : known;
+};
+
+/** The role this element has without a `role` attribute, when the markup on its own settles it. */
 const implicitRole = (tag: string, a: Attrs): string | undefined => {
   if (HEADING.test(tag)) return 'heading';
   if (tag === 'a' || tag === 'area') return a.has('href') ? 'link' : undefined;
-  if (tag === 'input') return INPUT[inputType(a)];
+  // `alt=""` is how an image says it is decoration — unless the browser has to ignore it.
+  if (tag === 'img') return a.get('alt') === '' && !conflicted(tag, a) ? 'none' : 'img';
+  if (tag === 'input') {
+    const type = inputType(a);
+    if (INPUT[type]) return INPUT[type];
+    if (NO_ROLE.has(type)) return undefined;
+    // Text, search, and every type the browser does not know, which it reads as text. A `list`
+    // makes it a combobox, but only when it points at a <datalist>, which this cannot see.
+    if (a.has('list')) return undefined;
+    return type === 'search' ? 'searchbox' : 'textbox';
+  }
   // A `<select>` is a listbox when it shows more than one row, and a combobox otherwise. Both are
   // settled here, and both matter: without this, `<select role="combobox">` is reported as
   // missing the `aria-expanded` that the element reports for itself.
@@ -181,48 +326,50 @@ const implicitRole = (tag: string, a: Attrs): string | undefined => {
   return IMPLICIT[tag];
 };
 
-// The rules that wait for an element to close before they can say anything: four that need to see
-// whether it held text, and `label-control`, which needs to see whether it held a control.
-type Waiting = 'empty-heading' | 'empty-link' | 'empty-button' | 'empty-title' | 'label-control';
+/**
+ * The role the browser gives the element, as far as the markup settles it. `role="none"` counts
+ * only where the browser honours it; WebKit's `role="text"` is honoured by WebKit alone, so an
+ * element that carries it has no role anyone can be sure of.
+ */
+const roleOf = (tag: string, a: Attrs): string | undefined => {
+  const explicit = explicitRole(a);
+  if (explicit === 'text') return undefined;
+  if (explicit === 'none') return conflicted(tag, a) ? implicitRole(tag, a) : 'none';
+  return explicit ?? implicitRole(tag, a);
+};
+
+// The rules that wait for an element to close before they can say anything.
+type Waiting =
+  | 'empty-heading'
+  | 'empty-link'
+  | 'empty-button'
+  | 'empty-title'
+  | 'img-alt'
+  | 'field-label'
+  | 'label-control';
 
 const why: Record<Exclude<Waiting, 'label-control'>, string> = {
   'empty-heading': 'a screen reader announces a heading and then reads nothing',
   'empty-link': 'a screen reader reads out the URL instead',
   'empty-button': 'a screen reader says only "button"',
   'empty-title': 'the tab, the bookmark and the first thing a screen reader reads are all blank',
+  'img-alt': 'a screen reader announces an image and nothing else. Give it a `<title>` or an `aria-label`',
+  'field-label': 'a screen reader announces the control and nothing else',
 };
 
-/** Is it named by ARIA? This is the exception for a rule asking about `title` itself. */
-const labelled = (a: Attrs) => a.has('aria-label') || a.has('aria-labelledby');
-/** Does this element carry a name of its own, `title` included? */
-const hasName = (a: Attrs) => labelled(a) || a.has('title');
-/** Does it carry one with something actually in it? */
+/** Does it carry a name of its own, with something actually in it? */
 const names = (tag: string, a: Attrs) =>
   TEXT.test(a.get('aria-label') ?? '') ||
   TEXT.test(a.get('aria-labelledby') ?? '') ||
   TEXT.test(a.get('title') ?? '') ||
   (tag === 'img' && TEXT.test(a.get('alt') ?? ''));
 
-/** Can the keyboard tab to this element, going only by its own markup? */
-const focusable = (tag: string, a: Attrs) => {
-  const t = a.get('tabindex');
-  if (t !== undefined) return INTAB.test(t);
-  if (tag === 'a' || tag === 'area') return a.has('href');
-  if (tag === 'audio' || tag === 'video') return a.has('controls');
-  if (tag === 'summary') return true;
-  return CONTROL.has(tag) && !a.has('disabled') && !(tag === 'input' && inputType(a) === 'hidden');
-};
-
 /** Reports what is wrong with an element's `role`, if anything. */
 const checkRole = (report: A11yReport, tag: string, a: Attrs, at: number) => {
   const role = (a.get('role') ?? '').trim();
   if (!role) return; // an empty `role` is `aria-empty`'s
-  // `role` takes a list, and the browser uses the first entry it knows. If that may be one these
-  // tables cannot judge, the check stops there.
-  const known = role
-    .toLowerCase()
-    .split(/\s+/)
-    .find((t) => ROLES.has(t) || outside(t));
+  // `role` takes a list, and the browser uses the first entry it knows.
+  const known = explicitRole(a);
   if (!known) {
     return report(
       'role-unknown',
@@ -230,24 +377,31 @@ const checkRole = (report: A11yReport, tag: string, a: Attrs, at: number) => {
       at,
     );
   }
-  if (outside(known)) return;
+  // WebKit's `text`, for VoiceOver, is known, so it is not reported above; no element has it
+  // already, and nothing below asks anything of it. Not ignored, so not ours to judge.
   if (known === implicitRole(tag, a)) {
+    const already = known === 'none' ? 'decoration' : `a \`${known}\``;
     return report(
       'role-redundant',
-      `\`<${tag} role="${known}">\`: \`<${tag}>\` is already a \`${known}\`, so the attribute says nothing the browser did not know`,
+      `\`<${tag} role="${role}">\`: \`<${tag}>\` is already ${already}, so the attribute says nothing the browser did not know`,
       at,
     );
   }
-  if ((known === 'presentation' || known === 'none') && focusable(tag, a)) {
+  if (known === 'none' && conflicted(tag, a)) {
+    const attr = global(a);
     return report(
-      'role-presentation-interactive',
-      `\`<${tag} role="${known}">\` can still be tabbed to: the browser drops a presentational role from anything focusable, so this does nothing`,
+      'role-presentation-conflict',
+      focusable(tag, a)
+        ? `\`<${tag} role="${role}">\` can still be tabbed to: the browser drops a presentational role from anything focusable, so this does nothing`
+        : `\`<${tag} role="${role}">\` has \`${attr}\`: the browser drops a presentational role from anything with a global ARIA attribute, so this does nothing`,
       at,
     );
   }
+  // A custom element can carry the state through ElementInternals, which the markup never shows.
+  if (tag.includes('-')) return;
   // The state the role is read with, unless the element supplies it: one that already had the
   // role reports its own (the return above), and so does an `<input>` with the state built in.
-  const need = REQUIRED[known];
+  const need = REQUIRED[known] ?? (known === 'separator' && focusable(tag, a) ? 'aria-valuenow' : undefined);
   if (need && !a.has(need) && !(tag === 'input' && nativeState(a) === need)) {
     // A heading is the one with something to fall back on: browsers read it as level 2.
     const outcome =
@@ -258,61 +412,176 @@ const checkRole = (report: A11yReport, tag: string, a: Attrs, at: number) => {
   }
 };
 
-// An element waiting to find out whether anything names it: the rule to report, where it started,
-// whether it has been satisfied, and its tag.
-type Frame = [rule: Waiting, at: number, ok: boolean, tag: string];
+/** Reports the `aria-*` attributes whose value the browser cannot use, and an empty `role`. */
+const checkValues = (report: A11yReport, a: Attrs, at: number) => {
+  for (const [name, value] of a) {
+    const v = value.trim();
+    const lower = v.toLowerCase();
+    if (name === 'role' && !v) {
+      report('aria-empty', '`role=""` does nothing: an empty value reads the same as leaving the attribute out', at);
+    }
+    if (!name.startsWith('aria-')) continue;
+    const key = name.slice(5);
+    const token = TOKENS[key];
+    if (!ARIA.has(key)) {
+      report(
+        'aria-unknown',
+        `\`${name}\` is not an ARIA attribute: no browser and no screen reader reads it, so it does nothing`,
+        at,
+      );
+    } else if (!v) {
+      report(
+        'aria-empty',
+        `\`${name}=""\` does nothing: an empty value reads the same as leaving the attribute out`,
+        at,
+      );
+    } else if (BOOLEAN[key] && !BOOLEAN[key].split(' ').includes(lower)) {
+      const takes = BOOLEAN[key].includes('mixed') ? '`true`, `false` or `mixed`' : '`true` or `false`';
+      report(
+        'aria-boolean',
+        `\`${name}="${value}"\`: the browser reads this as if the attribute were not there. It takes ${takes}`,
+        at,
+      );
+    } else if (key === 'live' && !LIVE.has(lower)) {
+      report(
+        'aria-live',
+        `\`aria-live="${value}"\`: a live region is \`polite\`, \`assertive\` or \`off\`, so updates here are never announced`,
+        at,
+      );
+    } else if (token && (LISTS.has(key) ? lower.split(/\s+/) : [lower]).some((t) => !token[0].split(' ').includes(t))) {
+      const values = token[0].split(' ').map((t) => `\`${t}\``);
+      report(
+        'aria-value',
+        `\`${name}="${value}"\` is not one of its values, so the browser reads it as \`${token[1]}\`. It takes ${values.slice(0, -1).join(', ')} or ${values.at(-1)}`,
+        at,
+      );
+    } else if (INTEGER.has(key) && !WHOLE.test(v)) {
+      report(
+        'aria-value',
+        `\`${name}="${value}"\` is not a whole number, so what a screen reader announces depends on the browser`,
+        at,
+      );
+    } else if (NUMBER.has(key) && !DECIMAL.test(v)) {
+      report('aria-value', `\`${name}="${value}"\` is not a number: the browser ignores it`, at);
+    }
+  }
+};
+
+// An element waiting to find out whether anything names it.
+interface Frame {
+  rule: Waiting;
+  /** Where it started, which is how `close` finds it again. */
+  at: number;
+  /** How many elements it sits inside. */
+  depth: number;
+  /** Has something named it yet? */
+  ok: boolean;
+  /** The element as a message shows it: `<button>`, `<span role="button">`. */
+  shown: string;
+  /** What can name it: text or a name inside it, a direct SVG `<title>` child, or a form control. */
+  by: 'content' | 'title' | 'control';
+}
 
 const rules = (report: A11yReport): Visitor => {
-  // The depth of the nearest element that takes its subtree out of the page a person hears.
+  // The depth of the nearest element that takes its subtree out of the page altogether: `hidden`,
+  // `inert`, `display: none`, `visibility: hidden`, a <template>. Nothing in it is read or reached.
   // Depth rather than offset, so a void element such as `<img hidden>` releases on its next
   // sibling instead of latching until the parent closes.
-  let shut = Infinity;
+  let unseen = Infinity;
+  // The same for `aria-hidden="true"`, which hides a subtree from a screen reader but not from the
+  // keyboard: the one rule that looks inside it is the one about the keyboard.
+  let muted = Infinity;
+  // The same for a closed <details> or <dialog>: shown later, but nothing in it takes focus yet.
+  let shelved = Infinity;
   const watch: Frame[] = [];
   const idTag = new Map<string, string>(); // every id, and the tag carrying it
   const fors: [id: string, at: number][] = []; // every `<label for>`, resolved at the end
+  const labelled = new Set<string>(); // every id a `<label for>` names
+  const fields: [id: string | undefined, at: number, shown: string][] = []; // form fields nothing named yet
+  let titles = 0; // <title> elements, outside <svg> and <template>: the first is the page's
+  let page = -1; // where <html> started, when the markup is a whole page
 
   return {
     open(tag, a, at, anc) {
       const depth = anc.length;
-      if (depth <= shut) shut = Infinity; // out the other side of whatever was hidden
-      const inside = shut < Infinity;
-      const unrendered = a.has('hidden') || a.has('inert') || NONE.test(a.get('style') ?? '');
-      const ariaHidden = TRUE.test(a.get('aria-hidden') ?? '');
+      if (depth <= unseen) unseen = Infinity; // out the other side of whatever was hidden
+      if (depth <= muted) muted = Infinity;
+      if (depth <= shelved) shelved = Infinity;
+      const custom = tag.includes('-');
 
-      // This one reports on the element that is hiding itself, so it has to run before the gate.
-      if (!inside && !unrendered && ariaHidden && focusable(tag, a)) {
+      // What holds wherever it sits: a `<label for>` names its control even from a hidden label,
+      // and the page's title is its first <title>, hidden or not.
+      const target = tag === 'label' ? a.get('for') : undefined;
+      if (target) labelled.add(target);
+      if (!anc.includes('template') && !anc.includes('svg')) {
+        if (tag === 'html') page = at;
+        if (tag === 'title') titles++;
+      }
+
+      const unrendered = a.has('hidden') || a.has('inert') || HIDDEN.test(a.get('style') ?? '') || tag === 'template';
+      if (unseen === Infinity && unrendered) unseen = depth;
+      if (unseen < Infinity) return; // nothing in here reaches anyone, so nothing in here is a bug
+
+      // aria-hidden takes a subtree away from a screen reader, not from the keyboard. Whatever the
+      // keyboard can still reach in there, the element itself included, is a stop that says nothing.
+      const ariaHidden = TRUE.test(a.get('aria-hidden') ?? '');
+      const reachable =
+        shelved === Infinity || (tag === 'summary' && depth === shelved + 1 && anc[shelved] === 'details');
+      if ((ariaHidden || muted < Infinity) && reachable && focusable(tag, a)) {
         report(
           'aria-hidden-focus',
-          `\`<${tag} aria-hidden="true">\` can still be tabbed to: focus stops here and a screen reader announces nothing`,
+          ariaHidden && muted === Infinity
+            ? `\`<${tag} aria-hidden="true">\` can still be tabbed to: focus stops here and a screen reader announces nothing`
+            : `\`<${tag}>\` is inside \`aria-hidden="true"\` but can still be tabbed to: focus stops there and a screen reader announces nothing`,
           at,
         );
       }
-      if (!inside && (unrendered || ariaHidden || tag === 'template')) shut = depth;
-      if (shut < Infinity) return; // nothing in here reaches anyone, so nothing in here is a bug
+      if (muted === Infinity && ariaHidden) muted = depth;
+      if (shelved === Infinity && (tag === 'details' || tag === 'dialog') && !a.has('open')) shelved = depth;
+      if (muted < Infinity) return;
 
       const id = a.get('id');
       // A labelable element wins a duplicate id, because that is the one `for` would resolve to.
-      if (id && (!idTag.has(id) || LABELABLE.has(tag) || tag.includes('-'))) idTag.set(id, tag);
+      if (id && (!idTag.has(id) || LABELABLE.has(tag) || custom)) idTag.set(id, tag);
+
+      const role = roleOf(tag, a);
+      const explicit = explicitRole(a);
+      const kind = role && (KIND[role] ?? role); // what the role is a kind of, for the rules that ask
+      const shown = explicit && explicit === role ? `<${tag} role="${a.get('role')!.trim()}">` : `<${tag}>`;
+      const svg = tag === 'svg' || anc.includes('svg');
 
       // Anything inside an element we are watching can be the thing that names it. A custom
       // element counts for both: it may carry its own label, or be a form control via
       // ElementInternals, and we cannot see inside it either way.
       if (watch.length) {
-        const custom = tag.includes('-');
-        const named = custom || names(tag, a);
+        const named = custom || (role !== 'none' && names(tag, a));
         const control = custom || LABELABLE.has(tag);
-        for (const f of watch) if (f[0] === 'label-control' ? control : named) f[2] = true;
+        for (const f of watch) if (f.by === 'control' ? control : f.by === 'content' && named) f.ok = true;
       }
+      // An element this rule set waits on, until it closes. A void one has nothing inside it to
+      // wait for, so it is judged on its own attributes, now.
+      const wait = (
+        rule: Waiting,
+        ok: boolean,
+        by: Frame['by'] = 'content',
+        message = `\`${shown}\` has no name: ${why[rule as Exclude<Waiting, 'label-control'>]}`,
+      ) => {
+        if (!VOID.has(tag)) watch.push({ rule, at, depth, ok, shown, by });
+        else if (!ok) report(rule, message, at);
+      };
 
+      // Images: an <img> the browser exposes, an image button, anything else given an image role.
       if (tag === 'img') {
-        if (!a.has('alt') && !hasName(a) && !DECOR.test(a.get('role') ?? '')) {
+        const alt = a.get('alt');
+        if (role === 'img' && !names(tag, a)) {
           report(
             'img-alt',
-            '`<img>` has no `alt`: a screen reader reads out the file name instead. Write `alt=""` if the image is decoration',
+            alt === undefined
+              ? '`<img>` has no `alt`: a screen reader reads out the file name instead. Write `alt=""` if the image is decoration'
+              : `\`alt="${alt}"\` is only whitespace: a screen reader reads out the file name, or nothing. Write \`alt=""\` if the image is decoration`,
             at,
           );
         }
-        const alt = a.get('alt');
         if (alt && FILENAME.test(alt)) {
           report(
             'img-alt-filename',
@@ -320,7 +589,67 @@ const rules = (report: A11yReport): Visitor => {
             at,
           );
         }
-      } else if (tag === 'a') {
+        if (alt === '' && !explicit && conflicted(tag, a)) {
+          report(
+            'role-presentation-conflict',
+            focusable(tag, a)
+              ? '`<img alt="">` can still be tabbed to: the browser drops `alt=""` from anything focusable, so the image is not decoration after all'
+              : `\`<img alt="">\` has \`${global(a)}\`: the browser drops \`alt=""\` from an image with a global ARIA attribute, so it is not decoration after all`,
+            at,
+          );
+        }
+      } else if (tag === 'input' && inputType(a) === 'image') {
+        if (!TEXT.test(a.get('alt') ?? '') && !names(tag, a)) {
+          report('img-alt', '`<input type="image">` has no `alt`: a screen reader says only "button"', at);
+        }
+      } else if (!custom && explicit === role && kind && (svg ? GRAPHIC.has(kind) : kind === 'img')) {
+        // An SVG element is named by a `<title>` child as well; anything else only by attributes.
+        if (svg) wait('img-alt', names(tag, a), 'title');
+        else if (!names(tag, a)) report('img-alt', `\`${shown}\` has no name: ${why['img-alt']}`, at);
+      }
+
+      // Controls and headings that take their name from what is inside them.
+      if (!custom && kind === 'link') {
+        if (tag === 'area') {
+          if (!TEXT.test(a.get('alt') ?? '') && !names(tag, a)) {
+            report('empty-link', '`<area>` has no `alt`: a screen reader reads out the URL instead', at);
+          }
+        } else wait('empty-link', names(tag, a) || a.has('contenteditable'));
+      } else if (!custom && role === 'button' && !(tag === 'input' && inputType(a) === 'image')) {
+        if (tag === 'input') {
+          const type = inputType(a);
+          if (type !== 'submit' && type !== 'reset' && !TEXT.test(a.get('value') ?? '') && !names(tag, a)) {
+            report('empty-button', `\`${shown}\` has no \`value\`: ${why['empty-button']}`, at);
+          }
+        } else wait('empty-button', names(tag, a) || a.has('contenteditable'));
+      } else if (!custom && role === 'heading') {
+        wait('empty-heading', names(tag, a) || a.has('contenteditable'));
+      } else if (tag === 'title' && titles === 1 && !anc.includes('svg')) {
+        wait('empty-title', false);
+      } else if (tag === 'label') {
+        if (target) fors.push([target, at]);
+        watch.push({ rule: 'label-control', at, depth, ok: !!target || a.has('id'), shown, by: 'control' });
+      }
+
+      // A form field needs a name: from a <label>, `aria-label`, `aria-labelledby` or `title`, and on
+      // a text field `placeholder` as a last resort. A custom element around it may be the label.
+      // One whose `role="none"` the browser honours — a disabled one, with nothing global on it — is
+      // no field at all.
+      if (!custom && role !== 'none' && !anc.some((x) => x.includes('-'))) {
+        if ((tag === 'input' && !NOT_A_FIELD.has(inputType(a))) || tag === 'select' || tag === 'textarea') {
+          // Every type the browser does not know is text, and takes a placeholder like text does.
+          const type = inputType(a);
+          const texty = PLACEHOLDER.has(type) || (!INPUT[type] && !NO_ROLE.has(type));
+          const placeholder =
+            (tag === 'textarea' || (tag === 'input' && texty)) && TEXT.test(a.get('placeholder') ?? '');
+          if (!names(tag, a) && !placeholder && !anc.includes('label')) fields.push([a.get('id'), at, shown]);
+        } else if (role && explicit === role && FIELD_ROLES.has(role) && !names(tag, a)) {
+          if (NAMED_BY_CONTENT.has(role)) wait('field-label', false);
+          else report('field-label', `\`${shown}\` has no name: ${why['field-label']}`, at);
+        }
+      }
+
+      if (tag === 'a') {
         // An `<a>` with no href is a named anchor, or something that was meant to be a link.
         // An id, a name, a tabindex or a role all say the author meant it; nothing else does.
         if (
@@ -338,9 +667,8 @@ const rules = (report: A11yReport): Visitor => {
             at,
           );
         }
-        if (a.has('href')) watch.push(['empty-link', at, names(tag, a) || a.has('contenteditable'), tag]);
       } else if (tag === 'html') {
-        if (!a.get('lang')) {
+        if (!TEXT.test(a.get('lang') ?? '')) {
           report(
             'html-lang',
             '`<html>` has no language: a screen reader reads the page in its own language, so the words come out wrong',
@@ -348,7 +676,10 @@ const rules = (report: A11yReport): Visitor => {
           );
         }
       } else if (tag === 'iframe') {
-        if (!a.get('title') && !labelled(a) && !DECOR.test(a.get('role') ?? '')) {
+        // A frame out of the tab order is one nobody lands in, and the ACT rule leaves it alone too.
+        const t = a.get('tabindex');
+        const tabbable = t === undefined || !TABINDEX.test(t) || INTAB.test(t);
+        if (tabbable && !names(tag, a)) {
           report(
             'iframe-title',
             '`<iframe>` has no name: a screen reader announces a frame and then reads out its URL',
@@ -365,23 +696,9 @@ const rules = (report: A11yReport): Visitor => {
             at,
           );
         }
-      } else if (tag === 'button' || HEADING.test(tag)) {
-        watch.push([
-          tag === 'button' ? 'empty-button' : 'empty-heading',
-          at,
-          names(tag, a) || a.has('contenteditable'),
-          tag,
-        ]);
-      } else if (tag === 'title') {
-        // An `<svg><title>` is a graphic's name, a different element with different rules.
-        if (!anc.includes('svg')) watch.push(['empty-title', at, false, tag]);
-      } else if (tag === 'label') {
-        const target = a.get('for');
-        if (target) fors.push([target, at]);
-        watch.push(['label-control', at, !!target || a.has('id'), tag]);
       }
 
-      if (a.has('scope') && tag !== 'th' && !tag.includes('-')) {
+      if (a.has('scope') && tag !== 'th' && !custom) {
         report(
           'misplaced-scope',
           `\`scope\` on \`<${tag}>\`: only \`<th>\` takes it, so the browser drops it. A header cell is \`<th scope="row">\``,
@@ -397,59 +714,34 @@ const rules = (report: A11yReport): Visitor => {
         );
       }
       checkRole(report, tag, a, at);
+      checkValues(report, a, at);
+    },
 
-      for (const [name, value] of a) {
-        const v = value.trim();
-        if (name.startsWith('aria-')) {
-          const key = name.slice(5);
-          if (!ARIA.has(key)) {
-            report(
-              'aria-unknown',
-              `\`${name}\` is not an ARIA attribute: no browser and no screen reader reads it, so it does nothing`,
-              at,
-            );
-          } else if (!v) {
-            report(
-              'aria-empty',
-              `\`${name}=""\` does nothing: an empty value reads the same as leaving the attribute out`,
-              at,
-            );
-          } else if (BOOL.has(key) && !BOOL_OK.has(v.toLowerCase())) {
-            report(
-              'aria-boolean',
-              `\`${name}="${value}"\`: the browser reads this as if the attribute were not there. Write \`true\` or \`false\`, or \`mixed\` on a half-checked control`,
-              at,
-            );
-          } else if (key === 'live' && !LIVE.has(v.toLowerCase())) {
-            report(
-              'aria-live',
-              `\`aria-live="${value}"\`: a live region is \`polite\`, \`assertive\` or \`off\`, so updates here are never announced`,
-              at,
-            );
-          }
-        } else if (name === 'role' && !v) {
-          report(
-            'aria-empty',
-            '`role=""` does nothing: an empty value reads the same as leaving the attribute out',
-            at,
-          );
-        }
+    text(content, _at, anc) {
+      if (!watch.length || !TEXT.test(content)) return;
+      const depth = anc.length;
+      if (depth > unseen || depth > muted) return; // inside something no one reads
+      const parent = anc[depth - 1];
+      if (parent && SILENT.has(parent)) return;
+      for (const f of watch) {
+        if (f.by === 'content' || (f.by === 'title' && depth === f.depth + 2 && parent === 'title')) f.ok = true;
       }
     },
 
-    close(tag, at, hadText) {
+    close(_tag, at) {
       const f = watch[watch.length - 1];
-      if (!f || f[1] !== at) return; // not something we are watching; an unclosed one is code 9
+      if (!f || f.at !== at) return; // not something we are watching; an unclosed one is code 9
       watch.pop();
-      if (f[2]) return;
-      if (f[0] === 'label-control') {
+      if (f.ok) return;
+      if (f.rule === 'label-control') {
         report(
           'label-control',
           '`<label>` is not attached to a control: it labels nothing, and clicking it does nothing',
           at,
         );
-      } else if (!hadText) {
-        report(f[0], `\`<${f[3]}>\` has no text: ${why[f[0]]}`, at);
+      } else {
+        const lacks = f.rule === 'img-alt' || f.rule === 'field-label' ? 'has no name' : 'has no text';
+        report(f.rule, `\`${f.shown}\` ${lacks}: ${why[f.rule]}`, at);
       }
     },
 
@@ -464,6 +756,17 @@ const rules = (report: A11yReport): Visitor => {
             at,
           );
         }
+      }
+      for (const [id, at, shown] of fields) {
+        if (id && labelled.has(id)) continue;
+        report(
+          'field-label',
+          `\`${shown}\` has no label: ${why['field-label']}. Give it a \`<label>\`, or an \`aria-label\``,
+          at,
+        );
+      }
+      if (page >= 0 && !titles) {
+        report('empty-title', `the page has no \`<title>\`: ${why['empty-title']}`, page);
       }
     },
   };
@@ -486,10 +789,12 @@ export type A11yRule =
   | 'aria-hidden-focus'
   | 'aria-live'
   | 'aria-unknown'
+  | 'aria-value'
   | 'empty-button'
   | 'empty-heading'
   | 'empty-link'
   | 'empty-title'
+  | 'field-label'
   | 'figcaption-parent'
   | 'html-lang'
   | 'iframe-title'
@@ -499,7 +804,7 @@ export type A11yRule =
   | 'label-for'
   | 'misplaced-scope'
   | 'positive-tabindex'
-  | 'role-presentation-interactive'
+  | 'role-presentation-conflict'
   | 'role-redundant'
   | 'role-required-props'
   | 'role-unknown';

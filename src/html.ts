@@ -54,9 +54,9 @@ const analyse = (strings: TemplateStringsArray, collapse: boolean): Site => {
     ? src
     : src.map((s, i) => {
         let c = s;
-        if (i === 0) c = c.replace(/^\s*\n\s*/, '');
-        if (i === last) c = c.replace(/\s*\n\s*$/, '');
-        return c.replace(/\s*\n\s*/g, ' ');
+        if (i === 0) c = c.replace(/^[\t\n\f\r ]*\n[\t\n\f\r ]*/, '');
+        if (i === last) c = c.replace(/[\t\n\f\r ]*\n[\t\n\f\r ]*$/, '');
+        return c.replace(/[\t\n\f\r ]*\n[\t\n\f\r ]*/g, ' ');
       });
 
   const contexts: Context[] = [];
@@ -66,6 +66,10 @@ const analyse = (strings: TemplateStringsArray, collapse: boolean): Site => {
   let quote = ''; // the quote that opened the current attribute value
   let after = ''; // 'eq' right after an `=`, 'bare' inside an unquoted value, else ''
   let gap = false; // inside a tag: has a separator (whitespace, `/`, a value, a `${…}`) come since the last name character?
+  // Inside <script> or <style>: is a `<!--` open, or a `<![CDATA[`? Both are false whenever a
+  // block starts, since a block only ends while neither is open.
+  let dash = false;
+  let cdata = false;
 
   for (let i = 0; i < src.length; i++) {
     const s = src[i]!;
@@ -74,28 +78,40 @@ const analyse = (strings: TemplateStringsArray, collapse: boolean): Site => {
     for (let j = 0; j < s.length; j++) {
       const ch = s[j]!;
       if (mode === 'text') {
-        if (s.startsWith('<!--', j)) {
-          mode = 'comment';
-          j += 3;
-        } else if (ch === '<' && /[a-zA-Z!?/]/.test(s[j + 1] ?? '')) {
-          // `<` followed by a letter, `!`, `?` or `/` starts a tag. A lone `<` is just text.
+        // The search for the end of a comment starts inside its `<!--`, on purpose: `<!-->` and
+        // `<!--->` are whole comments to the browser, and the overlap ends them where it does.
+        if (s.startsWith('<!--', j)) mode = 'comment';
+        else if (ch === '<' && /[a-zA-Z!?/]/.test(s[j + 1] ?? (i < last ? 'a' : ''))) {
+          // `<` followed by a letter, `!`, `?` or `/` starts a tag. A lone `<` is just text — but a
+          // `<` right before a `${…}` is not lone: the browser reads a value that starts with a
+          // letter as the tag's name, so the value is inside the tag.
           mode = 'tag';
           tag = attr = after = '';
           gap = false;
         }
       } else if (mode === 'comment') {
-        if (s.startsWith('-->', j)) {
-          mode = 'text';
-          j += 2;
-        }
+        if (s.startsWith('-->', j) || s.startsWith('--!>', j)) mode = 'text';
       } else if (mode === 'script' || mode === 'style') {
         // Inside <script> or <style> everything is text until the end tag: `</script` and then whitespace, `/` or `>`.
-        if (lower.startsWith(`</${mode}`, j) && /[\s/>]/.test(s[j + mode.length + 2] ?? ' ')) {
+        // Not while a `<!--` or a `<![CDATA[` is open, though. In an HTML <script> that is where the
+        // tokenizer's escaped states are, and in SVG it is a comment or a CDATA section, where an end
+        // tag is text. Which one it is cannot be told from here, so the block stays open: that can
+        // only refuse more.
+        if (s.startsWith('<!--', j)) dash = true;
+        else if (s.startsWith('-->', j)) dash = false;
+        else if (s.startsWith('<![CDATA[', j)) cdata = true;
+        else if (s.startsWith(']]>', j)) cdata = false;
+        else if (
+          !dash &&
+          !cdata &&
+          lower.startsWith(`</${mode}`, j) &&
+          /[\t\n\f\r />]/.test(s[j + mode.length + 2] ?? ' ')
+        ) {
+          // The character after the name is a separator, `>` or a `${…}`, and each sets `gap` itself.
           j += mode.length + 1;
           mode = 'tag';
           tag = '/'; // a stand-in name, so the tag that closes here cannot open the block again
           attr = '';
-          gap = true;
         }
       } else if (mode === 'value') {
         // Inside a quoted attribute value only the matching quote matters.
@@ -113,21 +129,20 @@ const analyse = (strings: TemplateStringsArray, collapse: boolean): Site => {
             after = '';
             continue;
           }
-          if (/\s/.test(ch)) continue;
+          if (/[\t\n\f\r ]/.test(ch)) continue;
           after = ch === '>' ? '' : 'bare'; // a value with no quotes around it
         }
         if (after === 'bare') {
-          if (!/[\s>]/.test(ch)) continue; // still inside the unquoted value
-          after = '';
+          if (!/[\t\n\f\r >]/.test(ch)) continue; // still inside the unquoted value
+          // The value is over, and so is its attribute: in `a=b ="…"` the `=` starts a new name.
+          after = attr = '';
         }
         if (ch === '>') {
           const t = tag.toLowerCase();
           mode = t === 'script' || t === 'style' ? t : 'text';
         } else if (tag === '') tag += ch; // the first character of the tag name: a letter, or `/` `!` `?`
-        else if (ch === '=' && attr !== '') {
-          after = 'eq'; // `href =` still belongs to href
-          gap = false;
-        } else if (/[\s/]/.test(ch)) {
+        else if (ch === '=' && attr !== '') after = 'eq'; // `href =` still belongs to href
+        else if (/[\t\n\f\r /]/.test(ch)) {
           gap = true; // a separator: the next name character starts a new name
           if (ch === '/') attr = ''; // and after a `/` even a `=` starts one, as in the browser
         } else if (!gap && attr === '') tag += ch; // the rest of the tag name
@@ -156,9 +171,25 @@ const analyse = (strings: TemplateStringsArray, collapse: boolean): Site => {
       throw new HtmlError(5, __DEV__ && `quote the attribute value before expression ${i}: …${s.slice(-40)}`);
     } else {
       // Inside a tag, a comment, <script> or <style>: only Html may go here.
-      if (mode === 'tag') gap = true; // a `${…}` in a tag stands for attributes we cannot see
+      const name = mode === 'tag' && tag === ''; // right after a `<`, where the tag's name goes
+      if (mode === 'tag') {
+        // A `${…}` in a tag stands for attributes we cannot see, so what follows it starts a new
+        // name: a `="…"` right after it belongs to whatever the value wrote last, not to `attr`.
+        gap = true;
+        attr = '';
+      }
       contexts.push({
-        only: __DEV__ ? (mode === 'tag' ? 'a tag' : mode === 'comment' ? 'a comment' : `<${mode}>`) : '',
+        only: __DEV__
+          ? name
+            ? 'a tag, right after `<` where its name goes (write `&lt;` for a less-than sign)'
+            : mode === 'tag'
+              ? 'a tag'
+              : mode === 'comment'
+                ? 'a comment'
+                : dash || cdata
+                  ? `<${mode}>, which has a \`${dash ? '<!--' : '<![CDATA['}\` still open, so where it ends is unclear`
+                  : `<${mode}>`
+          : '',
       });
     }
   }

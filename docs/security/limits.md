@@ -21,6 +21,13 @@ html`<div class="comment">${raw(DOMPurify.sanitize(userMarkup))}</div>`;
 
 Rendering user text, rather than user markup, needs none of this. `${userText}` is already safe.
 
+## A tag name in `raw()`
+
+`<${raw(name)}>` is taken on trust, like any `raw()`: the scanner cannot see which element it
+opens, so it reads what follows as ordinary markup. If the name is `script` or `style`, a value
+after it is escaped as text, and escaped text in a script still runs. Pick dynamic tag names from a
+fixed list, as in ``raw(`h${level}`)`` with a checked `level`, never from input.
+
 ## Data in a script block
 
 `JSON.stringify` does not escape `<`, and a `</script>` inside your data ends the block early

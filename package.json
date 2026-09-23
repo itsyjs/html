@@ -127,7 +127,7 @@
       "name": "@itsy/html (dev)",
       "path": "dist/index.dev.js",
       "import": "{ html, attrs, raw }",
-      "limit": "4.5 KB"
+      "limit": "6 KB"
     },
     {
       "name": "@itsy/html/attrs",
@@ -145,7 +145,7 @@
       "name": "@itsy/html/check (dev)",
       "path": "dist/check.dev.js",
       "import": "{ check }",
-      "limit": "6 KB"
+      "limit": "9.5 KB"
     },
     {
       "name": "@itsy/html/frame",
@@ -157,13 +157,13 @@
       "name": "@itsy/html/frame (dev)",
       "path": "dist/frame.dev.js",
       "import": "{ frame, head, element }",
-      "limit": "6 KB"
+      "limit": "7 KB"
     },
     {
       "name": "@itsy/html/util",
       "path": "dist/util.js",
       "import": "{ join, map, range, when, choose, wrap, comment }",
-      "limit": "1.2 KB"
+      "limit": "1.25 KB"
     },
     {
       "name": "@itsy/html/util (join only)",

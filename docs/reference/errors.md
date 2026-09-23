@@ -84,14 +84,24 @@ An expression that is not `Html` in a context where only markup can go.
 html`<input ${flag}>`; // ✗ inside a tag
 html`<script>${code}</script>`; // ✗ inside a script
 html`<!-- ${note} -->`; // ✗ inside a comment
+html`<${name}>`; // ✗ right after `<`, where the tag's name goes
 ```
+
+Right after a `<` counts as inside a tag: a value that starts with a letter would be read as the
+tag's name, so `img src=x onerror=…` would open an `<img>` of its own. Write `&lt;` for a literal
+less-than sign, or put a tag name you trust in `raw()`.
+
+A `<script>` or `<style>` with a `<!--` or `<![CDATA[` still open counts as inside it, past its end
+tag: in an SVG script, and in the escaped states of an HTML one, the browser reads that end tag as
+text.
 
 Inside a tag, use [`attrs()`](/api/attrs). Inside `<script>`, `<style>` or a comment, use `raw()` —
 and read [data in a script block](/security/limits#data-in-a-script-block) before you put JSON
 there. For untrusted comment text, [`comment()`](/api/util#comment) escapes it safely.
 
 This is also the code a [`frame`](/api/frame) script or style entry throws when its body is a plain
-string rather than `Html`.
+string rather than `Html`, and the one [`wrap()`](/api/util#wrap) throws for such an item in
+`<script>` or `<style>`: escaped text there still runs.
 
 ## Code 7 {#e7}
 
@@ -131,6 +141,10 @@ html`<ul><li>a<li>b</ul>`; // ✗ the second <li> closed the first
 An unclosed element swallows whatever follows it — in a list of components, the next sibling ends up
 inside the previous one. HTML does permit omitting `</li>`, `</p>` and some others, but in a
 template the likelier reading is that you forgot.
+
+The browser closes more for you than the spec's list of end tags you may leave out: a `<p>` at any
+block such as `<xmp>` or `<listing>`, an `<option>` at an `<hr>`, a table cell, row or section at any
+table part that cannot sit in it. Each is reported where the parser does it.
 :::
 
 To open in one template and close in another, say so with `raw()`:
@@ -195,12 +209,24 @@ Nesting the parser refuses to keep.
 html`<p><div>x</div></p>`; // ✗
 html`<a href="${x}"><a href="${y}">…</a></a>`; // ✗
 html`<table><tr><td>x</td></tr></table>`; // ✗ no tbody
+html`<table> total: <tr>…</tr></table>`; // ✗ text directly in a table
+html`<svg><p>x</p></svg>`; // ✗ an HTML tag that ends the SVG
+html`<body>…</body><script src="a.js"></script>`; // ✗ after </body>
+html`<div><tr><td>x</td></tr></div>`; // ✗ table parts outside a table
+html`<table><svg>…</svg></table>`; // ✗ anything but a table part, in a table
+html`<body><body class="x">…</body></body>`; // ✗ a second <body>
 ```
 
 ::: details What the browser does
 Rewrites it. A `<div>` inside a `<p>` closes the paragraph first, leaving an empty `<p></p>` before
 the div and a stray `</p>` after it. A nested `<a>` is moved out. A `<tr>` with no `<tbody>` gets
-one inserted, so a CSS selector or a `querySelector` written against your markup misses.
+one inserted, so a CSS selector or a `querySelector` written against your markup misses. Text
+directly inside a table is moved out in front of it. Inside SVG or MathML, an HTML tag such as
+`<p>`, `<div>` or `<img>` closes the foreign content and starts over as HTML. Anything after
+`</body>` is moved back into the body, and anything that belongs in the head, after `</head>`, back
+into the head. A `<tr>`, `<td>` or other table part outside a table is dropped, with its text kept.
+A second `<html>` or `<body>` is dropped and its attributes added to the first, and a `<head>` after
+the head is dropped.
 :::
 
 ## Code 14 {#e14}

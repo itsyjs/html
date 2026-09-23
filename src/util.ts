@@ -96,11 +96,14 @@ export const choose = <T, V extends Renderable>(
  * Each item inside a `<tag>`, with optional attributes through `attrs()`. The
  * items are rendered by the template, so text is escaped and `Html` is not.
  *
+ * Inside `<script>` and `<style>` an item must be `Html`, as it must in a
+ * template: escaped text there is still code.
+ *
  * @example
  * ```ts
  * html`<ul>${wrap(names, 'li', { class: 'name' })}</ul>`
  * ```
- * @throws {HtmlError} code 17 for a bad tag name
+ * @throws {HtmlError} code 17 for a bad tag name, code 6 for an item in `<script>` or `<style>` that is not `Html`
  */
 export const wrap = (
   items: Iterable<Renderable>,
@@ -110,7 +113,12 @@ export const wrap = (
   if (!TAG.test(tag)) throw new HtmlError(17, __DEV__ && `bad tag name "${tag}"`);
   const open = raw(`<${tag}${attributes ? ` ${attrs(attributes).markup}` : ''}>`);
   const close = raw(`</${tag}>`);
-  return map(items, (item) => [open, item, close]);
+  // The template sees only Html here, so it cannot tell these tags from any other: check here.
+  const code = /^(script|style)$/i.test(tag);
+  return map(items, (item) => {
+    if (code && !(item instanceof Html)) throw new HtmlError(6, __DEV__ && `an item in <${tag}> must be raw()`);
+    return [open, item, close];
+  });
 };
 
 /**

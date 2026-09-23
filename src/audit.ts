@@ -9,6 +9,10 @@
 //
 // The nesting tables come from Svelte's html-tree-validation.js (MIT), which
 // took them from React's validateDOMNesting. The `<p>` list is completed from the spec.
+//
+// itsy-html-spec's tree.test.ts holds the walk to its contract: whenever it reports nothing, the
+// tree it hands a rule set is the one parse5 builds, over the html5lib parser suite; and over
+// generated nestings, it reports one exactly when parse5 changes what is written.
 import { HtmlError } from './shared.ts';
 
 /** One thing wrong with the markup, as `check()` reports it. */
@@ -57,11 +61,14 @@ export interface Visitor {
    */
   open?: (tag: string, attrs: ReadonlyMap<string, string>, at: number, ancestors: readonly string[]) => void;
   /**
-   * A run of text, as written: everything between two tags, or the whole body of `<script>`,
-   * `<style>`, `<textarea>` and `<title>`. Never empty. Entities are not decoded, and a `<` that
-   * opens no tag is text, as the browser reads it.
+   * A run of text, as written, with the elements it sits inside, outermost first. A run is
+   * everything between two tags, comments or doctypes, so `TO<!-- -->DO` arrives as two, or the
+   * whole body of an element the browser reads as text: `<script>`, `<style>`, `<textarea>`,
+   * `<title>`, `<iframe>`, `<noscript>`, `<noembed>`, `<noframes>`, `<xmp>` and `<plaintext>`.
+   * Never empty. Entities are not decoded, and a `<` that opens no tag is text, as the browser
+   * reads it.
    */
-  text?: (content: string, at: number) => void;
+  text?: (content: string, at: number, ancestors: readonly string[]) => void;
   /** An element closed. `at` is where it started, and `hadText` says whether it held anything but whitespace. */
   close?: (tag: string, at: number, hadText: boolean) => void;
   /** The end of the markup, with every id on the page and where it was seen. */
@@ -88,13 +95,51 @@ export type RuleSet = (report: Report) => Visitor;
 // Stands in for a `${…}` when a template is audited. Inside a tag it means "some attributes we cannot see".
 const EXPRESSION = '${…}';
 
-// Elements that never have content or an end tag.
-const VOID = new Set('area base br col embed hr img input link meta param source track wbr'.split(' '));
-// Elements whose content is plain text up to the end tag, so a `<` inside them is not a tag.
-const RAW = new Set(['script', 'style', 'textarea', 'title']);
-// Inside these, `/>` really does self-close, and the HTML nesting rules do not apply. A
-// <foreignObject> inside them is HTML again.
-const FOREIGN = new Set(['svg', 'math']);
+const set = (names: string) => new Set(names.split(' '));
+
+/**
+ * Elements that never have content or an end tag. The last four are obsolete, but the parser still
+ * treats them as void, so an end tag for one is still a mistake.
+ * @internal
+ */
+export const VOID = set(
+  'area base br col embed hr img input link meta param source track wbr basefont bgsound frame keygen',
+);
+// Elements whose content the browser reads as text up to the end tag, so a `<` inside them is not a
+// tag. `<noscript>` is read the way a browser with scripting on reads it, which is every browser
+// anyone ships. `<plaintext>` has no end tag at all: everything after it is text.
+const RAW = set('script style textarea title iframe noembed noframes noscript xmp');
+// Inside these, `/>` really does self-close, and the HTML nesting rules do not apply.
+const FOREIGN = set('svg math');
+// Where SVG and MathML hand their content back to HTML, with its nesting rules and void elements.
+// `<annotation-xml>` is one too, but only when its encoding says HTML; that is decided per element.
+const POINTS = set('foreignobject desc title mi mo mn ms mtext');
+// HTML tags that end SVG or MathML wherever they appear inside it: the browser closes the foreign
+// content and starts the tag as HTML. `<font>` is one only with `color`, `face` or `size`.
+const BREAKOUT = set(
+  'b big blockquote body br center code dd div dl dt em embed h1 h2 h3 h4 h5 h6 head hr i img li listing menu meta nobr ol p pre ruby s small span strong strike sub sup table tt u ul var',
+);
+// What the browser moves back into the head when it comes after `</head>`.
+const HEADISH = set('base basefont bgsound link meta noframes script style template title');
+// Elements that cannot hold text themselves: the browser moves it out, in front of the table.
+const FOSTER = set('table tbody thead tfoot tr colgroup');
+// The tags that only mean something inside a table. Anywhere else the browser ignores them.
+const TABLE_PARTS = set('caption col colgroup tbody td tfoot th thead tr');
+// The elements a table part may start inside: the table's own, and a <template>, whose content
+// can be a piece of a table.
+const TABLE_CONTEXT = set('table caption colgroup tbody thead tfoot tr td th template');
+// The elements an implied end tag closes: the ones whose end tag the spec lets you leave out.
+const IMPLIED = set('dd dt li optgroup option p rb rp rt rtc');
+// Where the parser stops looking for an element "in scope": the edges of a table cell, an object,
+// a template, and the places SVG and MathML hand their content back to HTML.
+const SCOPE = set(
+  'applet caption html table td th marquee object template annotation-xml foreignobject desc title mi mo mn ms mtext',
+);
+// The parser's "special" elements, less `address`, `div` and `p`: a new <li>, <dd> or <dt> closes
+// the one open before it unless one of these sits in between.
+const SPECIAL = set(
+  'applet area article aside base basefont bgsound blockquote body br button caption center col colgroup dd details dir dl dt embed fieldset figcaption figure footer form frame frameset h1 h2 h3 h4 h5 h6 head header hgroup hr html iframe img input keygen li link listing main marquee menu meta nav noembed noframes noscript object ol param plaintext pre script search section select source style summary table tbody td template textarea tfoot th thead title tr track ul wbr xmp mi mo mn ms mtext annotation-xml foreignobject desc',
+);
 
 interface Rule {
   /** Tags that may not be a direct child. */
@@ -104,46 +149,63 @@ interface Rule {
   /** The only tags allowed as direct children. */
   only?: string[];
   /** If one of these sits in between, the `descendant` rule no longer applies. */
-  resetBy?: string[];
+  resetBy?: ReadonlySet<string>;
+  /** Tags that close it only inside a `<select>`. */
+  select?: string[];
 }
 
 const H = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
 const T = ['style', 'script', 'template'];
-const DT: Rule = { descendant: ['dt', 'dd'], resetBy: ['dl'] };
-const R: Rule = { descendant: ['rt', 'rp'] };
+const DT: Rule = { descendant: ['dt', 'dd'], resetBy: SPECIAL };
+// A <button> is as far as the parser looks for an open <p>; an <object>, a cell or a <marquee> is as
+// far as it looks for an open <a>, which it has to split around the new one.
+const BUTTON_SCOPE = new Set([...SCOPE, 'button']);
+const MARKERS = set('applet object marquee td th caption');
+// Inside a table, a table part starting closes what it cannot sit in, up to the table itself.
+const IN_TABLE = set('table');
+const CELL: Rule = { descendant: [...TABLE_PARTS], resetBy: IN_TABLE };
+const SECTION: Rule = { direct: ['caption', 'col', 'colgroup', 'tbody', 'thead', 'tfoot'] };
 
 // Elements the browser closes for you when one of the listed tags starts. The spec lets their
-// end tags be left out; this audit reports them anyway, so a template reads as it parses.
+// end tags be left out; this audit reports them anyway, so a template reads as it parses. The
+// lists are the parser's, which closes more than the spec's list of end tags you may leave out.
 const CLOSES: Record<string, Rule> = {
   li: { direct: ['li'] },
   dt: DT,
   dd: DT,
   p: {
     descendant: [
-      ...'address article aside blockquote details dialog div dl fieldset figcaption figure footer form'.split(' '),
+      ...'address article aside blockquote center details dialog dir div dl dd dt fieldset'.split(' '),
+      ...'figcaption figure footer form header hgroup hr li listing main menu nav'.split(' '),
       ...H,
-      ...'header hgroup hr li dd dt main menu nav ol p pre search section summary table ul'.split(' '),
+      ...'ol p plaintext pre search section summary table ul xmp'.split(' '),
     ],
+    resetBy: BUTTON_SCOPE,
   },
-  rt: R,
-  rp: R,
-  optgroup: { descendant: ['optgroup'] },
-  option: { descendant: ['option', 'optgroup'] },
-  thead: { direct: ['tbody', 'tfoot'] },
-  tbody: { direct: ['tbody', 'tfoot'] },
-  tfoot: { direct: ['tbody'] },
-  tr: { direct: ['tr', 'tbody'] },
-  td: { direct: ['td', 'th', 'tr'] },
-  th: { direct: ['td', 'th', 'tr'] },
+  optgroup: { select: ['optgroup', 'hr'] },
+  option: { direct: ['option', 'optgroup'], select: ['hr'] },
+  caption: CELL,
+  thead: SECTION,
+  tbody: SECTION,
+  tfoot: SECTION,
+  tr: { direct: ['caption', 'col', 'colgroup', 'tbody', 'thead', 'tfoot', 'tr'] },
+  td: CELL,
+  th: CELL,
 };
 
 // Children the browser moves somewhere else, splits, or drops.
 const DISALLOWED: Record<string, Rule> = {
   ...CLOSES,
+  // A new <li> closes the one before it unless a list or another special element sits between.
+  li: { descendant: ['li'], resetBy: SPECIAL },
   form: { descendant: ['form'] },
-  a: { descendant: ['a'] },
-  button: { descendant: ['button'] },
-  ...Object.fromEntries(H.map((h) => [h, { descendant: H }])),
+  a: { descendant: ['a'], resetBy: MARKERS },
+  button: { descendant: ['button'], resetBy: SCOPE },
+  nobr: { descendant: ['nobr'], resetBy: SCOPE },
+  // A second <select>, or a control that cannot sit in one, closes the <select> first.
+  select: { descendant: ['select', 'input', 'keygen', 'textarea'] },
+  // A heading closes one it starts in, but only as its direct child.
+  ...Object.fromEntries(H.map((h) => [h, { direct: H }])),
   tr: { only: ['th', 'td', ...T] },
   tbody: { only: ['tr', ...T] },
   thead: { only: ['tr', ...T] },
@@ -155,13 +217,15 @@ const DISALLOWED: Record<string, Rule> = {
 };
 
 // Attributes whose value is an id, or a space-separated list of ids, that must exist on the page.
-const IDREFS = new Set(
-  'for form list headers popovertarget commandfor itemref aria-labelledby aria-describedby aria-controls aria-owns aria-details aria-errormessage aria-flowto aria-activedescendant'.split(
-    ' ',
-  ),
+const IDREFS = set(
+  'for form list headers popovertarget commandfor itemref aria-labelledby aria-describedby aria-controls aria-owns aria-details aria-errormessage aria-flowto aria-activedescendant',
 );
 
-const WS = /\s/;
+// Whitespace as HTML reads it. Not JavaScript's `\s`: a vertical tab or a no-break space is part
+// of a name or a value to the browser, never a gap between them.
+const WS = /[\t\n\f\r ]/;
+// Text the parser has to put somewhere: anything but the ASCII whitespace it passes over.
+const INK = /[^\t\n\f\r ]/;
 // Where markup starts: `<` before a letter, `!` or `?`, or `</` before anything at all. The
 // browser reads any other `<` as text, and so does the audit.
 const MARKUP = /<[a-z!?]|<\/./gis;
@@ -186,7 +250,7 @@ export const audit = (
   const ids = page?.ids ?? false;
   const text = chunks.join(EXPRESSION);
   // Tag and attribute names are compared in lowercase. ASCII only, because `toLowerCase()` on
-  // `\u0130` (the Turkish dotted capital I) returns two characters, and every offset after it
+  // `İ` (the Turkish dotted capital I) returns two characters, and every offset after it
   // would then be wrong. The HTML parser lowercases only ASCII in names too.
   const lower = text.replace(/[A-Z]/g, (c) => c.toLowerCase());
   const n = text.length;
@@ -198,70 +262,192 @@ export const audit = (
   const stack: string[] = []; // the elements currently open, outermost first
   const openedAt: number[] = []; // where each of them started
   const held: boolean[] = []; // did each of them hold any text
+  const points: boolean[] = []; // does each of them hand its content back to HTML (see POINTS)
   const idAt = new Map<string, number>(); // every id seen, and where
   const refs: [attr: string, id: string, at: number][] = []; // every id reference, checked at the end
+  // Where the document is: the browser files what comes after `</head>` or `</body>` elsewhere.
+  let started = false; // has any element started yet? After one, an `<html>` tag is too late
+  let headDone = false;
+  let ended = ''; // `body` or `html` once that end tag has closed the document's content
 
-  const push = (name: string, at: number) => {
+  const push = (name: string, at: number, attrMap: ReadonlyMap<string, string>) => {
     stack.push(name);
     openedAt.push(at);
     held.push(false);
+    points.push(
+      POINTS.has(name) ||
+        (name === 'annotation-xml' && /^(text\/html|application\/xhtml\+xml)$/i.test(attrMap.get('encoding') ?? '')),
+    );
   };
-  const pop = (): string => {
+  const pop = () => {
     const from = openedAt.pop()!;
     const hadText = held.pop()!;
     const name = stack.pop()!;
+    points.pop();
+    if (name === 'head') headDone = true;
+    if (name === 'html' || (name === 'body' && !ended)) ended = name;
     if (hadText && held.length) held[held.length - 1] = true; // text in a child is text in its parent
     visit?.close?.(name, from, hadText);
-    return name;
   };
   // A start tag, handed to the rule set. The ancestors go as a copy: the stack moves on, and a rule
   // set may keep what it was given.
   const enter = (name: string, attrMap: ReadonlyMap<string, string>, at: number) =>
     visit?.open?.(name, attrMap, at, stack.slice());
-  // A run of text, taken whole so a rule set can read what it says. Whether it holds anything but
-  // whitespace is all the walk itself needs from it, and only for a rule set's `close`.
-  const onText = (from: number, to: number) => {
-    if (!visit || from === to) return;
-    const run = text.slice(from, to);
-    if (held.length && run.trim()) held[held.length - 1] = true;
-    visit.text?.(run, from);
-  };
-  // Are we inside <svg> or <math>? The nearest of those and <foreignObject> decides: inside a
-  // <foreignObject> the content is HTML again, with its nesting rules and its void elements.
+  // Is the current element SVG or MathML? The nearest integration point or foreign root decides:
+  // inside a <foreignObject> the content is HTML again, with its nesting rules and its void elements.
   const foreign = (): boolean => {
-    for (let k = stack.length - 1; k >= 0; k--) {
-      const name = stack[k]!;
-      if (name === 'foreignobject') return false;
-      if (FOREIGN.has(name)) return true;
-    }
-    return false;
+    let k = stack.length - 1;
+    while (k >= 0 && !points[k] && !FOREIGN.has(stack[k]!)) k--;
+    return k >= 0 && !points[k];
+  };
+  // Is the parser in the part of the document after `</head>` and before `<body>`? A <body> that
+  // has started is on the stack, or has ended and set `ended`, which is checked first.
+  const afterHead = () => headDone && (stack.length === 0 || (stack.length === 1 && stack[0] === 'html'));
+  // Is `name` open, with nothing between it and the current element that stops the parser looking?
+  const inScope = (name: string): boolean => {
+    let k = stack.length - 1;
+    while (k >= 0 && stack[k] !== name && !SCOPE.has(stack[k]!)) k--;
+    return k >= 0 && stack[k] === name;
   };
 
-  // A start tag was read.
-  const open = (name: string, at: number, selfClosing: boolean, attrMap: ReadonlyMap<string, string>) => {
-    if (foreign() || FOREIGN.has(name)) {
+  // A run of text. The walk needs it for two things: text the browser moves (out of a table, out
+  // of the head, back into the body), and whether an element held anything, for a rule set.
+  const onText = (from: number, to: number) => {
+    if (from === to) return;
+    const parent = stack[stack.length - 1];
+    const moved = !foreign() && (FOSTER.has(parent ?? '') || parent === 'head' || ended !== '');
+    const run = text.slice(from, to);
+    if (moved) {
+      // The first character the parser has to put somewhere. A `${…}` is not text: in a template
+      // it is whatever the value renders, rows and cells included.
+      let k = 0;
+      while (k < run.length && (run.startsWith(EXPRESSION, k) || !INK.test(run[k]!))) {
+        k += run.startsWith(EXPRESSION, k) ? EXPRESSION.length : 1;
+      }
+      if (k < run.length) {
+        problem(
+          13,
+          from + k,
+          parent === 'head'
+            ? 'text inside `<head>`: the browser ends the head there and moves the text into the body'
+            : parent !== undefined && FOSTER.has(parent)
+              ? `text directly inside \`<${parent}>\`: the browser moves it out, in front of the table`
+              : `text after \`</${ended}>\`: the browser moves it into the body`,
+        );
+      }
+    }
+    if (!visit) return;
+    if (held.length && run.trim()) held[held.length - 1] = true;
+    visit.text?.(run, from, stack.slice());
+  };
+  // Where a <script> ends. `<!--` puts the tokenizer in its escaped state, and a `<script` inside
+  // that in its double-escaped one, where a `</script>` is text rather than the end.
+  // The search for `-->` starts inside the `<!--`, so `<!-->` ends the escape as the browser ends it.
+  const scriptEnd = (from: number): number => {
+    let state = 0; // 0: script data, 1: escaped, 2: double escaped
+    let k = from;
+    for (; k < n; k++) {
+      if (lower.startsWith('-->', k)) state = 0;
+      if (lower[k] !== '<') continue;
+      if (state === 0 && lower.startsWith('<!--', k)) state = 1;
+      else if (lower.startsWith('script', k + 1) && /[\t\n\f\r />]/.test(lower[k + 7] ?? '')) {
+        if (state === 1) state = 2;
+      } else if (lower.startsWith('/script', k + 1) && /[\t\n\f\r />]/.test(lower[k + 8] ?? '>')) {
+        if (state === 2) state = 1;
+        else break;
+      }
+    }
+    return k; // the end tag, or the end of the markup when there is none
+  };
+
+  // A start tag was read. Returns whether it opened an HTML element that holds content, which is
+  // what decides whether its body is text. `<script />` counts: the browser ignores the `/`.
+  const open = (
+    tag: string,
+    at: number,
+    selfClosing: boolean,
+    attrMap: ReadonlyMap<string, string>,
+    unseen: boolean,
+  ) => {
+    let name = tag;
+    // A tag that ends SVG or MathML: report it, then do what the browser does — close the foreign
+    // content and start the tag as HTML.
+    if (
+      foreign() &&
+      (BREAKOUT.has(name) || (name === 'font' && (attrMap.has('color') || attrMap.has('face') || attrMap.has('size'))))
+    ) {
+      const root = [...stack].reverse().find((s) => FOREIGN.has(s))!;
+      problem(
+        13,
+        at,
+        `\`<${name}>\` cannot be inside \`<${root}>\`: the browser closes the \`<${root}>\` and starts \`<${name}>\` as HTML`,
+      );
+      while (foreign()) pop();
+    }
+    if (foreign()) {
       // Inside SVG or MathML there are no nesting rules, and `/>` works. A rule set still needs
       // the close, or a self-closing tag leaves it waiting for an element that never ends.
       enter(name, attrMap, at);
       if (selfClosing) visit?.close?.(name, at, false);
-      else push(name, at);
-      return;
+      else push(name, at, attrMap);
+      return false;
     }
-    // <br>, <img> and friends never open anything, though a rule still wants to see them.
-    if (VOID.has(name)) return enter(name, attrMap, at);
-    if (selfClosing) {
+    // An <svg> or a <math> starts in HTML, so it is placed by HTML's rules like any other element.
+    const root = FOREIGN.has(name);
+    if (name === 'image') {
+      problem(13, at, '`<image>` is not an HTML element: the browser reads it as `<img>`');
+      name = 'img';
+    }
+    const isVoid = VOID.has(name);
+    if (selfClosing && !isVoid && !root) {
       problem(
         11,
         at,
         `\`<${name} />\` does not self-close in HTML: the browser opens \`<${name}>\` and never closes it. Write \`<${name}></${name}>\``,
       );
     }
+    // After `</head>` or `</body>` the browser files the element somewhere else.
+    if (ended) problem(13, at, `\`<${name}>\` after \`</${ended}>\`: the browser moves it into the body`);
+    else if (afterHead() && HEADISH.has(name)) {
+      problem(13, at, `\`<${name}>\` after \`</head>\`: the browser moves it back into the head`);
+    }
+    // Tags the browser drops, or folds into an element it already has. A <template>'s contents are
+    // a document fragment: there is no document for these to start.
+    if ((name === 'html' || name === 'head' || name === 'body') && stack.includes('template')) {
+      problem(13, at, `\`<${name}>\` inside \`<template>\`: the browser ignores the tag`);
+    } else if (name === 'html' && started) {
+      problem(
+        13,
+        at,
+        '`<html>` after the page has started: the browser adds its attributes to the first and drops the tag',
+      );
+    } else if (name === 'body' && stack.some((e) => e !== 'html' && e !== 'head')) {
+      problem(13, at, '`<body>` inside the body: the browser adds its attributes to the first and drops the tag');
+    } else if (name === 'head' && (headDone || stack.some((e) => e !== 'html'))) {
+      problem(13, at, '`<head>` after the head: the browser drops the tag');
+    } else if (TABLE_PARTS.has(name) && stack.length) {
+      // The nearest table part, <template> or custom element decides. None at all, or a <template>
+      // with something else between, and the parser is reading body content, where this means nothing.
+      let k = stack.length - 1;
+      while (k >= 0 && !TABLE_CONTEXT.has(stack[k]!) && !stack[k]!.includes('-')) k--;
+      if (k < 0 || (stack[k] === 'template' && k < stack.length - 1)) {
+        problem(13, at, `\`<${name}>\` outside a table: the browser drops the tag`);
+      }
+    }
     // Would this tag close the open element for us, as in `<li>a<li>b` or `<p>text<div>`? The browser allows
-    // it; this audit wants the end tag written. Report it, then do what the browser does.
+    // it; this audit wants the end tag written. Report it, then do what the browser does. Inside a
+    // <ruby>, an annotation closes every element whose end tag may be left out, the way an end tag
+    // the parser implies does; an <rt> or <rp> leaves an <rtc> open, since it may hold them.
+    const annotation = /^r(b|p|t|tc)$/.test(name) && inScope('ruby');
     while (stack.length) {
       const top = stack[stack.length - 1]!;
       const rule = CLOSES[top];
-      if (!rule || !(rule.direct ?? rule.descendant ?? []).includes(name)) break;
+      const implied = annotation && IMPLIED.has(top) && !(top === 'rtc' && (name === 'rt' || name === 'rp'));
+      const closes =
+        rule &&
+        ((rule.direct ?? rule.descendant ?? []).includes(name) ||
+          (rule.select?.includes(name) && stack.includes('select')));
+      if (!implied && !closes) break;
       problem(
         9,
         openedAt[openedAt.length - 1]!,
@@ -269,6 +455,10 @@ export const audit = (
       );
       pop();
     }
+    // A hidden <input> is the one element a table keeps where it is written. Attributes we cannot
+    // see might make it one.
+    const type = attrMap.get('type');
+    const hidden = name === 'input' && (unseen || /^hidden$/i.test(type ?? '') || !!type?.includes(EXPRESSION));
     // Is this tag allowed where it is? Custom elements may hold anything, and a
     // <template>'s contents are a separate tree, so both stop the search.
     if (!name.includes('-')) {
@@ -277,12 +467,11 @@ export const audit = (
         if (anc.includes('-') || anc === 'template') break;
         const rule = DISALLOWED[anc];
         if (!rule) continue;
-        if (rule.resetBy?.some((r) => stack.includes(r, k + 1))) continue; // a <dl> between a <dd> and a <dt> resets the rule
+        // A <dl> between a <dd> and a <dt> resets the rule, as a <table> between a cell and a row does.
+        if (rule.resetBy && stack.slice(k + 1).some((e) => rule.resetBy!.has(e))) continue;
         const parent = k === stack.length - 1;
-        if (
-          (parent && ((rule.only && !rule.only.includes(name)) || rule.direct?.includes(name))) ||
-          rule.descendant?.includes(name)
-        ) {
+        const outside = rule.only && !rule.only.includes(name) && !(hidden && FOSTER.has(anc));
+        if ((parent && (outside || rule.direct?.includes(name))) || rule.descendant?.includes(name)) {
           problem(
             13,
             at,
@@ -293,8 +482,16 @@ export const audit = (
       }
     }
     // Everything the browser would have closed is closed by now, so the ancestors are the real ones.
+    // <br>, <img> and friends never open anything, though a rule still wants to see them.
+    started = true;
     enter(name, attrMap, at);
-    push(name, at);
+    if (isVoid) return false;
+    if (root && selfClosing) {
+      visit?.close?.(name, at, false); // `<svg/>` is whole, as it is inside SVG
+      return false;
+    }
+    push(name, at, attrMap);
+    return !root; // what is inside SVG or MathML is markup, never raw text
   };
 
   // An end tag was read.
@@ -332,13 +529,26 @@ export const audit = (
     }
     const at = i;
     if (text.startsWith('<!--', i)) {
-      // A comment: skip to its end.
-      const e = text.indexOf('-->', i + 4);
+      // A comment. `<!-->` and `<!--->` are whole comments; any other ends at the first `-->` or
+      // `--!>`, and one that never ends runs to the end of the markup.
+      if (text[i + 4] === '>') i += 5;
+      else if (text.startsWith('->', i + 4)) i += 6;
+      else {
+        const a = text.indexOf('-->', i + 4);
+        const b = text.indexOf('--!>', i + 4);
+        i = b >= 0 && (a < 0 || b < a) ? b + 4 : a >= 0 ? a + 3 : n;
+      }
+      continue;
+    }
+    if (text.startsWith('<![CDATA[', i) && foreign()) {
+      // Inside SVG and MathML a CDATA section is text, `<` and `>` included, up to `]]>`.
+      const e = text.indexOf(']]>', i + 9);
+      onText(i + 9, e < 0 ? n : e);
       i = e < 0 ? n : e + 3;
       continue;
     }
     const closing = text[i + 1] === '/';
-    if (text[i + 1] === '!' || text[i + 1] === '?' || (closing && !/[a-z]/i.test(text[i + 2]!))) {
+    if (text[i + 1] === '!' || text[i + 1] === '?' || (closing && !/[a-z]/i.test(text[i + 2] ?? ''))) {
       // <!doctype> and the like, or an end tag with no name: the browser makes `</ x>` a comment
       // and drops `</>` altogether. Either way, skip to the `>`.
       const e = text.indexOf('>', i);
@@ -348,12 +558,13 @@ export const audit = (
     let j = i + (closing ? 2 : 1);
     // Read the tag name. Everything that reaches here starts with a letter.
     const nameStart = j;
-    while (j < n && !/[\s/>]/.test(text[j]!)) j++;
+    while (j < n && !/[\t\n\f\r />]/.test(text[j]!)) j++;
     const name = lower.slice(nameStart, j);
     // Read the attributes, up to the `>`.
-    const attrMap = new Map<string, string>(); // this tag's attributes, for the rule set
+    const attrMap = new Map<string, string>(); // this tag's attributes, as the browser keeps them
     const seen = new Set<string>(); // attribute names on this tag, to spot duplicates
     let selfClosing = false;
+    let unseen = false; // did a `${…}` stand for attributes we cannot see?
     let done = false; // did we reach the `>`?
     while (j < n && !done) {
       const ch = text[j]!;
@@ -367,8 +578,10 @@ export const audit = (
           done = true;
           j += 2;
         } else j++; // a stray `/`, which the browser ignores
-      } else if (text.startsWith(EXPRESSION, j)) j += EXPRESSION.length; // a `${…}` in the tag: attributes we cannot see
-      else if (ch === '<') {
+      } else if (text.startsWith(EXPRESSION, j)) {
+        unseen = true; // a `${…}` in the tag: attributes we cannot see
+        j += EXPRESSION.length;
+      } else if (ch === '<') {
         problem(
           8,
           at,
@@ -376,19 +589,21 @@ export const audit = (
         );
         done = true; // start over at this `<`
       } else {
-        // An attribute name, then maybe an `=` and a value.
-        let k = j;
-        while (k < n && !/[\s/>=]/.test(text[k]!)) k++;
+        // An attribute name, then maybe an `=` and a value. The first character always belongs to
+        // the name, even a `=`: in `<a =x>` the browser reads an attribute called `=x`.
+        let k = j + 1;
+        while (k < n && !/[\t\n\f\r />=]/.test(text[k]!)) k++;
         const attr = lower.slice(j, k);
         if (/["']/.test(attr)) {
           problem(8, at, `a quote inside the attribute name \`${text.slice(j, k)}\` on \`<${name}>\`: missing \`=\`?`);
         }
         // The browser keeps the first of a repeated attribute and drops the rest, so a repeat is
-        // reported and read no further: a rule set never sees it, and its id counts for nothing.
+        // reported and goes no further: no rule set sees it, its id counts for nothing, and a URL
+        // the guard blocked in it is not reported, since the browser never uses it.
         const repeat = seen.has(attr);
         if (repeat) problem(14, at, `\`${attr}\` appears twice on \`<${name}>\`: the browser keeps the first`);
         seen.add(attr);
-        if (visit && !repeat) attrMap.set(attr, '');
+        if (!repeat) attrMap.set(attr, '');
         j = k;
         while (j < n && WS.test(text[j]!)) j++;
         if (text[j] === '=') {
@@ -404,22 +619,23 @@ export const audit = (
           } else {
             // An unquoted value: everything up to whitespace or `>`.
             let e = j;
-            while (e < n && !/[\s>]/.test(text[e]!)) e++;
+            while (e < n && !/[\t\n\f\r >]/.test(text[e]!)) e++;
             value = text.slice(j, e);
             j = e;
           }
-          if (visit && !repeat) attrMap.set(attr, value);
+          if (repeat) continue;
+          attrMap.set(attr, value);
           // A URL the guard replaced. Only a rendered page can have one, so only `check()` reports it.
           if (page && value === BLOCKED)
             problem(19, at, `${attr}="${BLOCKED}": the URL guard blocked this value's scheme`);
-          // Remember ids and id references for the check at the end.
-          if (!repeat && (ids || visit) && !closing && !value.includes(EXPRESSION)) {
+          // Remember ids and id references for the check at the end. An empty id is no id at all.
+          if ((ids || visit) && !closing && !value.includes(EXPRESSION)) {
             if (attr === 'id') {
               if (idAt.has(value)) {
                 if (ids) problem(16, at, `id "${value}" is used twice`);
-              } else idAt.set(value, at);
+              } else if (value) idAt.set(value, at);
             } else if (ids && IDREFS.has(attr)) {
-              for (const ref of value.split(/\s+/)) if (ref) refs.push([attr, ref, at]);
+              for (const ref of value.split(/[\t\n\f\r ]+/)) if (ref) refs.push([attr, ref, at]);
             }
           }
         }
@@ -428,13 +644,18 @@ export const audit = (
     if (!done) problem(8, at, `\`<${closing ? '/' : ''}${name}\` is never closed with \`>\``); // ran out of markup inside the tag
     i = j;
     if (closing) close(name, at);
-    else {
-      open(name, at, selfClosing, attrMap);
-      // Inside <script>, <style>, <textarea> or <title>, jump straight to the end tag: `</script` and
-      // then whitespace, `/` or `>`. A `</scripts>` does not end a script.
-      if (!foreign() && RAW.has(name) && !selfClosing) {
-        let e = lower.indexOf(`</${name}`, i);
-        while (e >= 0 && !/[\s/>]/.test(lower[e + name.length + 2] ?? '>')) e = lower.indexOf(`</${name}`, e + 1);
+    else if (open(name, at, selfClosing, attrMap, unseen)) {
+      if (name === 'plaintext') {
+        onText(i, n); // no end tag ever ends it
+        i = n;
+      } else if (RAW.has(name)) {
+        // Jump straight to the end tag: `</title` and then whitespace, `/` or `>`. A `</titles>`
+        // does not end a title, and a <script> follows the tokenizer's escaped states.
+        let e = name === 'script' ? scriptEnd(i) : lower.indexOf(`</${name}`, i);
+        if (name !== 'script') {
+          while (e >= 0 && !/[\t\n\f\r />]/.test(lower[e + name.length + 2] ?? '>'))
+            e = lower.indexOf(`</${name}`, e + 1);
+        }
         const stop = e < 0 ? n : e;
         onText(i, stop);
         i = stop;

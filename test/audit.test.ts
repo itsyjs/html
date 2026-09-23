@@ -88,6 +88,131 @@ suite('template audit: what the parser would repair', () => {
     assert.doesNotThrow(() => html`${raw('<div class="wrapper">')}<p>x</p>`);
     assert.doesNotThrow(() => html`<p>x</p>${raw('</div>')}`);
   });
+  test('whitespace between table parts is no text to move', () => {
+    assert.doesNotThrow(() => html`<table> <tbody> <tr> <td>x</td> </tr> </tbody> </table>`);
+  });
+});
+
+// What the parser closes for you (9) and what it drops, folds in or moves (13), each case as
+// parse5 builds it. The clean ones are the near-misses: nesting the parser keeps as written.
+suite('the parser, element by element', () => {
+  const first = (markup: string) => check(markup, { a11y: false })[0];
+  test('the tags that close an open <p>', () => {
+    for (const tag of ['center', 'dir', 'div', 'listing', 'plaintext', 'xmp', 'h2', 'hr', 'table', 'dd']) {
+      assert.equal(first(`<p>a<${tag}>`)?.code, 9, tag);
+      assert.equal(first(`<p>a<${tag}>`)?.at, 0, tag);
+    }
+    assert.deepEqual(codes('<p>a<span>b</span></p>'), []);
+    // A <button> or an <object> is where the parser stops looking for the <p>, so it stays open.
+    assert.deepEqual(codes('<p><button><div>x</div></button></p>'), []);
+    assert.deepEqual(codes('<p><object><div>x</div></object></p>'), []);
+    assert.deepEqual(codes('<p><span><div>x</div></span></p>'), [13]);
+  });
+  test('where the parser stops looking for an element to close', () => {
+    // A heading closes a heading it is the direct child of, and no other.
+    assert.deepEqual(codes('<h1><h2>x</h2></h1>'), [13]);
+    assert.deepEqual(codes('<h1><span><h2>x</h2></span></h1>'), []);
+    // An <a> or a <button> is split around a new one, but not past an <object>.
+    assert.deepEqual(codes('<a href="/"><object><a href="/x">y</a></object></a>'), []);
+    assert.deepEqual(codes('<button><object><button>x</button></object></button>'), []);
+    // Outside a <select>, an <hr> or a group closes no option and no group.
+    assert.deepEqual(codes('<option>a<hr></option>'), []);
+    assert.deepEqual(codes('<optgroup label="g"><optgroup label="h"></optgroup></optgroup>'), []);
+    assert.deepEqual(codes('<option>a<option>b</option></option>'), [9, 10]);
+  });
+  test('an <hr> closes an open option or group, as the next option does', () => {
+    assert.deepEqual(codes('<select><option>a<hr></select>'), [9]);
+    assert.deepEqual(codes('<select><optgroup label="g"><option>a<hr></select>'), [9, 9]);
+    assert.deepEqual(codes('<select><option>a</option><hr><option>b</option></select>'), []);
+  });
+  test('a table part closes the cell, row, section or caption it cannot sit in', () => {
+    const t = (inner: string) => codes(`<table>${inner}</table>`);
+    assert.deepEqual(t('<caption>a<tbody><tr><td>x</td></tr></tbody>'), [9]);
+    assert.deepEqual(t('<thead><tr><th>a</th></tr><tbody><tr><td>x</td></tr></tbody>'), [9]);
+    assert.deepEqual(t('<tbody><tr><td>a</td></tr><tfoot><tr><td>x</td></tr></tfoot>'), [9]);
+    assert.deepEqual(t('<tfoot><tr><td>a</td></tr><tbody><tr><td>x</td></tr></tbody>'), [9]);
+    assert.deepEqual(t('<tbody><tr><td>a</td><tr><td>x</td></tr></tbody>'), [9]);
+    assert.deepEqual(t('<tbody><tr><th>a<td>x</td></tr></tbody>'), [9]);
+    assert.deepEqual(t('<tbody><tr><td>a<tbody><tr><td>x</td></tr></tbody>'), [9, 9, 9]);
+    // Deeper inside the cell it is still the cell that closes, which the audit reports, not repairs.
+    assert.deepEqual(t('<tbody><tr><td><div><tr></tr></div></td></tr></tbody>'), [13]);
+    // A table inside the cell is a table of its own.
+    assert.deepEqual(t('<tbody><tr><td><table><tbody><tr><td>x</td></tr></tbody></table></td></tr></tbody>'), []);
+  });
+  test('inside a <ruby>, an annotation closes what an implied end tag closes', () => {
+    assert.deepEqual(codes('<ruby>a<rt>b<rp>c</rp></ruby>'), [9]);
+    assert.deepEqual(codes('<ruby><rb>a<rt>b</rt></ruby>'), [9]);
+    assert.deepEqual(codes('<ruby><p>a<rt>b</rt></ruby>'), [9]);
+    // …except that an <rt> or <rp> may sit in an <rtc>, and outside a <ruby> nothing closes.
+    assert.deepEqual(codes('<ruby>a<rtc><rt>b</rt></rtc></ruby>'), []);
+    assert.deepEqual(codes('<rt>a<rp>b</rp></rt>'), []);
+  });
+  test('a new <li>, <dd> or <dt> closes the one before it, unless a special element sits between', () => {
+    assert.deepEqual(codes('<ul><li><span><li>x</li></span></li></ul>'), [13]);
+    assert.deepEqual(codes('<ul><li><div><li>x</li></div></li></ul>'), [13]);
+    assert.deepEqual(codes('<ul><li><ul><li>x</li></ul></li></ul>'), []);
+    assert.deepEqual(codes('<dl><dt><ul><dd>x</dd></ul></dt></dl>'), []);
+    assert.deepEqual(codes('<dl><dt><span><dd>x</dd></span></dt></dl>'), [13]);
+  });
+  test('tags the browser drops, or folds into the element it already has', () => {
+    assert.deepEqual(codes('<div><tr><td>x</td></tr></div>'), [13]);
+    assert.deepEqual(codes('<select><tr></tr></select>'), [13]);
+    assert.deepEqual(codes('<html><body><html></html></body></html>'), [13]);
+    assert.deepEqual(codes('<html><body><div><body></body></div></body></html>'), [13]);
+    assert.deepEqual(codes('<html><head></head><head></head></html>'), [13]);
+    assert.deepEqual(codes('<div><head></head></div>'), [13]);
+    // A piece of a table, on its own, is how a row component starts.
+    assert.deepEqual(codes('<tr><td>x</td></tr>'), []);
+    assert.deepEqual(codes('<template><tr><td>x</td></tr></template>'), []);
+  });
+  test('an <svg> or <math> in a table is placed like any element that is not a table part', () => {
+    assert.deepEqual(codes('<table><svg></svg></table>'), [13]);
+    assert.deepEqual(codes('<table><tbody><tr><math></math></tr></tbody></table>'), [13]);
+    assert.deepEqual(codes('<table><tbody><tr><td><svg viewBox="0 0 1 1"/></td></tr></tbody></table>'), []);
+    assert.deepEqual(codes('<body></body><svg></svg>'), [13]);
+  });
+  test('a <nobr> inside a <nobr> is moved out', () => {
+    assert.deepEqual(codes('<nobr>a<nobr>b</nobr></nobr>'), [13]);
+    assert.deepEqual(codes('<nobr>a</nobr><nobr>b</nobr>'), []);
+  });
+  test('only a table part goes in a table section, and each nesting is reported once', () => {
+    assert.deepEqual(codes('<table><thead><div>x</div></thead></table>'), [13]);
+    assert.deepEqual(codes('<table><tfoot><div>x</div></tfoot></table>'), [13]);
+    // Every <a> is inside two others, but one report says it.
+    assert.deepEqual(codes('<a href="/"><a href="/"><a href="/">x</a></a></a>'), [13, 13]);
+  });
+  test('the parser looks for an open <ruby> only as far as the edge of a scope', () => {
+    // An <object> is such an edge, so the <rt> in it closes nothing outside.
+    assert.deepEqual(codes('<ruby><object><p>a<rt>b</rt></p></object></ruby>'), []);
+  });
+  test('an HTML tag inside SVG closes the SVG, and what follows is HTML', () => {
+    assert.deepEqual(codes('<svg><div></div></svg>'), [13, 10]);
+    // After a <foreignObject> has closed, the SVG around it is SVG again.
+    assert.deepEqual(codes('<svg><foreignObject></foreignObject><g><div></div></g></svg>'), [13, 10, 10]);
+    assert.deepEqual(codes('<image src="a.png">'), [13]); // read as <img>, which is void
+    assert.deepEqual(trace('<p><svg/></p>'), [
+      'open p@0 [] {}',
+      'open svg@3 [p] {}',
+      'close svg@3 false', // whole, as it would be inside SVG
+      'close p@0 false',
+      'end ',
+    ]);
+  });
+  test('a hidden <input> may sit in a table, and attributes we cannot see might make it one', () => {
+    assert.doesNotThrow(() => html`<table><tbody><tr><td>x</td></tr></tbody><input type="hidden" name="n"></table>`);
+    assert.doesNotThrow(
+      () => html`<table><tbody><tr><td>x</td></tr></tbody><input ${attrs({ type: 'hidden' })}></table>`,
+    );
+    assert.throws(() => html`<table><tbody><tr><td>x</td></tr></tbody><input name="n"></table>`, { code: 13 });
+  });
+  test('a raw-text element ends only at its own end tag, not at a longer name', () => {
+    assert.deepEqual(codes('<title>a</titles>b</title><textarea>c</textareas>d</textarea>'), []);
+  });
+  test('an attribute name may start with `=`, and only HTML whitespace ends a name', () => {
+    assert.deepEqual(trace('<a =x>y</a>')[0], 'open a@0 [] {=x=}'); // one attribute, `=x`, with no value
+    // A vertical tab is part of the tag name, so this is an <a\u000bhref="x"> with no end tag.
+    assert.deepEqual(codes('<a\u000bhref="x">y</a>'), [9, 10]);
+  });
 });
 
 suite('check(): the output validator', () => {
@@ -370,8 +495,40 @@ suite('rule sets compose', () => {
       ['img-alt', 'house'],
     );
   });
+  test('composed with a project’s rules, the accessibility rules lose nothing', () => {
+    // Passing `rules` at all puts the built-in rules behind the composition, so every hook has to
+    // come through it: `close` reports the empty button, `end` the label pointing at a <b>, and
+    // `text` is what names the link — without it, the link would be reported empty.
+    const page = '<button></button><label for="x">y</label><b id="x"></b><a href="/">Home</a>';
+    const names = (r: ReturnType<typeof check>) => r.map((p) => ('rule' in p ? p.rule : p.code));
+    assert.deepEqual(names(check(page)), ['empty-button', 'label-for']);
+    assert.deepEqual(names(check(page, { rules: () => ({}) })), names(check(page)));
+    // …and a project's own hooks get the same, whichever position the set is in.
+    const log: string[] = [];
+    const spy: RuleSet = () => ({
+      text: (content) => log.push(content),
+      close: (tag) => log.push(`/${tag}`),
+      end: () => log.push('end'),
+    });
+    check('<p>hi</p>', { rules: [() => ({}), spy] });
+    assert.deepEqual(log, ['hi', '/p', 'end']);
+  });
   test('every hook is optional', () => {
     assert.doesNotThrow(() => check('<p>x</p>', { a11y: false, rules: () => ({}) }));
+  });
+  test('an entry that is not a rule set is left out, so a condition can sit in the list', () => {
+    const strict = false;
+    const house = seen('house');
+    for (const rules of [[strict && house], [null], [undefined, house]] as unknown as RuleSet[][]) {
+      assert.doesNotThrow(() => check('<img src="a">', { rules }));
+      assert.doesNotThrow(() => check('<img src="a">', { a11y: false, rules }));
+    }
+    assert.deepEqual(
+      check('<img src="a" alt="">', { a11y: false, rules: [undefined, house] as unknown as RuleSet[] }).map((p) =>
+        'rule' in p ? p.rule : p.code,
+      ),
+      ['house'],
+    );
   });
   test('an empty list of rule sets behaves like none at all', () => {
     assert.deepEqual(check('<div>', { a11y: false, rules: [] }), [

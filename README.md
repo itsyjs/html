@@ -54,7 +54,7 @@ server and in a browser.
   entry of a shared layout without reordering the rest.
 - **[`check()`][check]** — the same checks over a rendered page, plus duplicate ids, id references
   pointing nowhere, and any URL the guard blocked. 28 bytes in production.
-- **[Twenty-three accessibility rules][a11y]**, running inside `check()` by default, in the same
+- **[Twenty-five accessibility rules][a11y]**, running inside `check()` by default, in the same
   pass and the same list: the unlabelled icon button, the misspelled `aria-` attribute, the image
   with no `alt`, the role that does not exist. `{ a11y: { without: [...] } }` turns any of them
   off, with the names type-checked. They cost nothing — the production build compiles them away
@@ -80,12 +80,12 @@ Minified and brotli-compressed, with the listed imports and nothing else.
 
 | import              |                            | production  | development |
 | ------------------- | -------------------------- | ----------- | ----------- |
-| `@itsy/html`        | `html`, `attrs`, `raw`     | **1.73 kB** | 4.16 kB     |
+| `@itsy/html`        | `html`, `attrs`, `raw`     | **1.79 kB** | 5.79 kB     |
 | `@itsy/html/attrs`  | `attrs`, `cx`              | **929 B**   | —           |
-| `@itsy/html/check`  | `check`                    | **28 B**    | 5.45 kB     |
-| `@itsy/html/frame`  | `frame`, `head`, `element` | **2.54 kB** | 4.96 kB     |
-| `@itsy/html/util`   | all seven helpers          | **1.18 kB** | —           |
-| `@itsy/html/create` | `createHtml`               | **1.77 kB** | —           |
+| `@itsy/html/check`  | `check`                    | **28 B**    | 8.91 kB     |
+| `@itsy/html/frame`  | `frame`, `head`, `element` | **2.6 kB**  | 6.64 kB     |
+| `@itsy/html/util`   | all seven helpers          | **1.21 kB** | —           |
+| `@itsy/html/create` | `createHtml`               | **1.84 kB** | —           |
 
 [The import map][imports] has every entry point and what each one exports.
 

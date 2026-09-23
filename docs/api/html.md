@@ -24,6 +24,7 @@ render of a template that breaks a rule. Values never throw except for [code 7](
 | quoted attribute      | the same escape                                             |
 | URL attribute         | the same escape, then [a scheme check](/security/url-guard) |
 | inside a tag          | `attrs()` or `raw()` only                                   |
+| right after `<`       | `raw()` only: the browser reads a value there as a tag name |
 | `<script>`, `<style>` | `raw()` only                                                |
 | comment               | `raw()` only                                                |
 
@@ -31,6 +32,9 @@ render of a template that breaks a rule. Values never throw except for [code 7](
 - It runs once per template, cached on the strings array, so a markup error throws on the first
   render and repeated renders do no extra work.
 - Unquoted attribute values and `on*` attributes are refused at scan time, whatever the value.
+- A `<script>` or `<style>` with a `<!--` or `<![CDATA[` still open does not end at its end tag: the
+  browser may read that tag as text, so the scan keeps the block open, and a value after it is
+  refused rather than escaped for a context it may not be in.
 
 ## raw
 

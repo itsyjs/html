@@ -120,6 +120,17 @@ suite('wrap', () => {
     assert.throws(() => wrap(['x'], ''), { code: 17 });
     assert.throws(() => wrap(['x'], '1a'), { code: 17 });
   });
+  test('inside <script> and <style> an item must be Html, as in a template: its text is code', () => {
+    // Escaping stops `</script>`, but not `alert(1)`, which needs no escaping to run.
+    assert.throws(() => wrap(['alert(1)'], 'script'), { name: 'HtmlError', code: 6 });
+    assert.throws(() => wrap(['*{}'], 'STYLE'), { code: 6 });
+    assert.throws(() => wrap([() => raw('x')], 'script'), { code: 6 }); // the item itself, not a thunk
+    assert.equal(
+      s(html`${wrap([raw('{"a":1}'), raw('{"b":2}')], 'script', { type: 'application/json' })}`),
+      '<script type="application/json">{"a":1}</script><script type="application/json">{"b":2}</script>',
+    );
+    assert.equal(s(html`${wrap(['a'], 'scripts')}`), '<scripts>a</scripts>'); // only the whole name
+  });
 });
 
 suite('comment', () => {
