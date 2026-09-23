@@ -7,16 +7,16 @@ import type * as Frame from '#frame';
 import type * as Util from '#util';
 import type * as Create from '#create';
 
-// Runs against dist/, so it only ever runs after a build: `pnpm build` runs it through
-// `postbuild`, and `pnpm check` reaches it through `check:build`. It sits in its own directory
-// because `pnpm test` globs `test/*.test.ts`, which does not recurse — so the normal suite stays
-// a fast inner loop that needs no build, and this file cannot rejoin it by accident.
+// Runs against dist/, so it only runs after a build. `pnpm build` runs it through `postbuild`,
+// and `pnpm check` reaches it through `check:build`. It sits in its own directory because
+// `pnpm test` globs `test/*.test.ts`, which does not recurse. So the normal suite stays a fast
+// inner loop that needs no build, and this file cannot rejoin it by accident.
 const dist = new URL('../../dist/', import.meta.url);
 const built = existsSync(new URL('index.js', dist)) && existsSync(new URL('index.dev.js', dist));
 
-// Deliberately not a `skip`. A missing dist/ means the invocation was wrong, and skipping would
-// report success having tested nothing — which is exactly what this file used to do, and the
-// reason it was moved out of the normal suite.
+// Deliberately not a `skip`. A missing dist/ means the invocation was wrong. A skip would report
+// success having tested nothing. This file used to do exactly that, which is why it moved out of
+// the normal suite.
 if (!built) throw new Error('dist/ is missing — run `pnpm build`, which runs these via postbuild');
 
 const load = (file: string) => import(new URL(file, dist).href) as Promise<typeof Lib>;
@@ -112,8 +112,8 @@ suite('built output', () => {
       'closes nothing',
       'bad tag name',
       'the URL guard blocked',
-      // The accessibility rules moved inside check() — these are the strings that would show up
-      // if they came with it. This is the assertion that keeps the merge honest.
+      // The accessibility rules moved inside check(). These are the strings that would show up
+      // if the rules came with it. This assertion keeps the merge honest.
       'aria-labelledby',
       'screen reader',
       'menuitemcheckbox',

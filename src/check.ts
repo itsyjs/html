@@ -4,15 +4,14 @@ import { type A11yRule, a11yRules } from './a11y.ts';
 
 export type { A11yRule, Finding, Problem, Report, RuleSet, Visitor };
 
-/** Turning some of the accessibility rules off, with the names type-checked. */
+/** Turns some accessibility rules off. The names are type-checked. */
 export interface A11yOptions {
   /**
-   * Rules to silence, by name. A misspelt name is a type error rather than a rule that quietly
-   * stays on.
+   * Rules to silence, by name. A misspelt name is a type error, not a rule that quietly stays on.
    *
-   * Reach for it when a rule is wrong for a whole codebase. For one element, prefer markup that
-   * says why — `alt=""`, `role="presentation"` and `aria-hidden="true"` all silence the rules that
-   * apply to them, and they tell a screen reader the same thing.
+   * Use it when a rule is wrong for a whole codebase. For one element, prefer markup that says
+   * why. `alt=""`, `role="presentation"` and `aria-hidden="true"` each silence the rules that apply
+   * to them, and tell a screen reader the same thing.
    */
   without?: readonly A11yRule[];
 }
@@ -28,8 +27,7 @@ export interface CheckOptions {
   /**
    * The accessibility rules. `false` turns them off; an object turns some of them off by name.
    *
-   * They cost nothing to leave on: the production build compiles them away with the rest of
-   * `check()`.
+   * They cost nothing in production: the build removes them with the rest of `check()`.
    * @defaultValue true
    */
   a11y?: boolean | A11yOptions;
@@ -49,9 +47,9 @@ export interface CheckOptions {
   rules?: RuleSet | readonly RuleSet[];
 }
 
-// The rule sets as one, so the audit walks the markup once whatever the count. Each hook is
-// forwarded to every visitor that wants it, in the order the sets were given, so their findings
-// interleave in page order like any other. One set is handed over as it is, and none as nothing.
+// Merges the rule sets into one, so the audit walks the markup once however many there are. Each
+// hook goes to every visitor that has it, in the order given, so findings interleave in page
+// order. One set passes through as it is; no sets give `undefined`.
 const compose = (sets: readonly RuleSet[]): RuleSet | undefined =>
   sets.length < 2
     ? sets[0]
@@ -75,8 +73,8 @@ const compose = (sets: readonly RuleSet[]): RuleSet | undefined =>
 
 interface Check {
   /**
-   * The markup check on its own. Accessibility findings are advice rather than correctness, so
-   * turning them off narrows the result back to {@link Problem}.
+   * The markup check on its own. Accessibility findings are advice, not correctness, so turning
+   * them off narrows the result to {@link Problem}.
    *
    * @example
    * ```ts
@@ -85,16 +83,16 @@ interface Check {
    */
   (markup: string | Html, options: CheckOptions & { a11y: false; rules?: undefined }): Problem[];
   /**
-   * Checks a rendered page for markup the browser would silently repair, and for the
-   * accessibility problems a person reading the page would pay for.
+   * Checks a rendered page for markup the browser would silently repair, and for accessibility
+   * problems that affect its readers.
    *
-   * It runs every check the template audit runs, but across the whole page, so it also sees
-   * problems between templates and inside `attrs()` output, plus the two only a page can show: id
+   * It runs every check of the template audit over the whole page. So it also sees problems
+   * between templates and inside `attrs()` output. It adds two only a page can show: id
    * references (15, 16) and URLs the guard blocked (19).
    *
    * Call it where the string leaves the renderer: a test, a Storybook decorator, a dev-only
-   * middleware. The production build always returns `[]` — assert {@link Check.enabled} if a
-   * suite must not pass vacuously.
+   * middleware. The production build always returns `[]`. Assert {@link Check.enabled} so a suite
+   * cannot pass vacuously.
    *
    * @example
    * ```ts
@@ -105,7 +103,7 @@ interface Check {
    */
   (markup: string | Html, options?: CheckOptions & { rules?: undefined }): (Problem | Finding<A11yRule>)[];
   /**
-   * With custom rules, whose names this cannot know, so a finding's `rule` widens to `string`.
+   * With custom rules. Their names are unknown here, so a finding's `rule` widens to `string`.
    *
    * @example
    * ```ts
@@ -116,8 +114,8 @@ interface Check {
   /**
    * `false` in the production build, where `check()` returns `[]` whatever it is given.
    *
-   * A suite that resolves the production build passes every assertion built on `check()` without
-   * looking at anything, so assert this once and the suite cannot pass having checked nothing.
+   * A suite that resolves the production build passes every `check()` assertion without checking
+   * anything. Asserting this once stops the suite passing having checked nothing.
    *
    * @example
    * ```ts
@@ -130,22 +128,22 @@ interface Check {
 export const check = ((markup: string | Html, options?: CheckOptions) => {
   const found: (Problem | Finding)[] = [];
   if (__DEV__) {
-    // What is left out takes its default, and a `null` in place of the options leaves them all out.
-    // A `null` inside them is outside the types too, and reads as `false` wherever it lands: rules
-    // off, id checks off, and in `rules`, one set fewer — so `rules: [flag && house]` works as it
-    // reads. Never a throw.
+    // A missing option takes its default, and `null` options mean all defaults. A `null` inside
+    // the options is outside the types too. It reads as `false` wherever it lands: rules off, id
+    // checks off, and in `rules`, one set fewer. So `rules: [flag && house]` works as it reads.
+    // Nothing here throws.
     const { ids = true, a11y = true, rules } = options ?? {};
-    // The built-in rules run first, so when they and a project's report from the same hook at the
-    // same offset, theirs reads first.
+    // The built-in rules run first. When they and a project's rules report from the same hook at
+    // the same offset, the built-in finding comes first.
     const sets: RuleSet[] = [];
     if (a11y) sets.push(a11yRules(a11y === true ? undefined : a11y.without));
     for (const set of [rules].flat()) if (typeof set === 'function') sets.push(set);
     audit([String(markup)], (p) => found.push(p), { ids }, compose(sets));
-    found.sort((a, b) => a.at - b.at); // a rule reports as the audit walks; this puts everything in page order
+    found.sort((a, b) => a.at - b.at); // rules report as the audit walks; this sorts all into page order
   }
   return found;
 }) as Check;
 
-// Written as a plain assignment so the production build folds it to `check.enabled = false`. The
-// cast is only to keep `enabled` readonly for everyone else.
+// A plain assignment, so the production build folds it to `check.enabled = false`. The cast only
+// keeps `enabled` readonly everywhere else.
 (check as { enabled: boolean }).enabled = __DEV__;

@@ -1,50 +1,50 @@
-// Accessibility rules for `check()`. Advice, never a reason to throw: everything here is markup
-// the browser renders exactly as written, and a person using the page pays for.
+// Accessibility rules for `check()`. They advise and never throw: the browser renders all of this
+// markup exactly as written, and the people using the page pay for it.
 //
-// A rule only fires when it is sure. Reporting correct markup is worse than missing a bug, because
-// one wrong finding is all it takes for someone to turn the whole thing off, so every borderline
-// case below is deliberately silent.
+// A rule fires only when it is sure. Reporting correct markup is worse than missing a bug: one
+// wrong finding is enough for someone to turn the whole check off. So every borderline case below
+// stays silent on purpose.
 //
 // The rule names and most of the reasoning come from Svelte's a11y pass (MIT), which took them
 // from eslint-plugin-jsx-a11y.
 //
-// Two oracles hold this file to outside sources, so a review argues with a failing case rather than
-// an opinion. In the itsy-html-spec repository, act.test.ts runs every example the W3C ACT Rules
-// group publishes for the rules here, and tables.test.ts checks the tables below against
-// aria-query, which is generated from ARIA and HTML-AAM. Every place this file differs from either
-// on purpose is listed there, with the reason.
+// Two oracles in the itsy-html-spec repository hold this file to outside sources, so a review
+// argues with a failing case, not an opinion. act.test.ts runs every example the W3C ACT Rules
+// group publishes for these rules. tables.test.ts checks the tables below against aria-query,
+// which is generated from ARIA and HTML-AAM. Every deliberate difference from either is listed
+// there, with the reason.
 //
-// The tables are written out rather than imported: aria-query and axobject-query are 10.9 kB brotli
-// between them and would be a dependency in a library that has none. They cost nothing to ship —
-// `check()` compiles this whole file away in production. The one rule still missing is "this
-// `aria-*` is not allowed on this role": it needs the full role-to-properties graph, which is both
-// the largest table and the easiest one to be wrong with.
+// The tables are written out, not imported: aria-query and axobject-query are 10.9 kB brotli
+// together, and this library has no dependencies. The tables cost nothing in production, where
+// `check()` compiles this whole file away. One rule is still missing: "this `aria-*` is not
+// allowed on this role". It needs the full role-to-properties graph, the largest table and the
+// easiest to get wrong.
 //
-// This file is only ever reached from `check()`, inside its `__DEV__` branch.
+// Only `check()` reaches this file, inside its `__DEV__` branch.
 import { type RuleSet, type Visitor, VOID } from './audit.ts';
 
 type Attrs = ReadonlyMap<string, string>;
 /**
- * How the rules here report: `Report`, with the name checked against the closed union at the end
- * of this file. A typo in a rule name is a type error here, not a name `A11yRule` never heard of.
+ * How the rules here report: a `Report` whose rule name is checked against the closed union at the
+ * end of this file. A typo in a rule name is a type error here, not an unknown name in the output.
  */
 type A11yReport = (rule: A11yRule, message: string, at: number) => void;
 
 const set = (names: string) => new Set(names.split(' '));
 
-// The tables are exported for itsy-html-spec's tables.test.ts, and for nothing else.
+// The tables are exported only for itsy-html-spec's tables.test.ts.
 
 /**
- * Every ARIA attribute name, without its `aria-` prefix. A name outside this list does nothing at
- * all — no browser and no screen reader reads it — so a typo is silent. That is what the list buys.
+ * Every ARIA attribute name, without its `aria-` prefix. A name outside this list does nothing: no
+ * browser or screen reader reads it. So a typo fails silently, and this list is what catches it.
  * @internal
  */
 export const ARIA = /* @__PURE__ */ set(
   'activedescendant atomic autocomplete braillelabel brailleroledescription busy checked colcount colindex colindextext colspan controls current describedby description details disabled dropeffect errormessage expanded flowto grabbed haspopup hidden invalid keyshortcuts label labelledby level live modal multiline multiselectable orientation owns placeholder posinset pressed readonly relevant required roledescription rowcount rowindex rowindextext rowspan selected setsize sort valuemax valuemin valuenow valuetext',
 );
 /**
- * The true/false attributes, and the values each takes: `undefined` where the spec lists it, and
- * `mixed` on the two tristates. Any other value reads as if the attribute were not there.
+ * The true/false attributes and the values each takes: `undefined` where the spec lists it, and
+ * `mixed` on the two tristates. Any other value reads as if the attribute were absent.
  * @internal
  */
 export const BOOLEAN: Record<string, string> = {
@@ -64,7 +64,7 @@ export const BOOLEAN: Record<string, string> = {
   selected: 'true false undefined',
 };
 /**
- * The token attributes: the values each takes, and what the browser reads a value outside them as.
+ * The token attributes: the values each takes, and how the browser reads any other value.
  * `aria-current` and `aria-invalid` read an unknown value as `true`; the rest fall back to their
  * default. `aria-live` has its own rule, with its own consequence.
  * @internal
@@ -102,33 +102,33 @@ export const GLOBALS = /* @__PURE__ */ set(
 const LABELABLE = /* @__PURE__ */ set('button input meter output progress select textarea');
 // Form controls the keyboard reaches, unless they are disabled.
 const CONTROL = /* @__PURE__ */ set('button select textarea input');
-// `<input>` types that are not a field someone fills in: a button of some kind, or nothing at all.
+// `<input>` types that are not a field to fill in: a button of some kind, or nothing at all.
 const NOT_A_FIELD = /* @__PURE__ */ set('hidden submit reset button image');
 // `<input>` types whose `placeholder` counts as a last-resort name, as HTML-AAM has it.
 const PLACEHOLDER = /* @__PURE__ */ set('text search url tel email password number');
-// `<input>` types with no ARIA role at all. Every type not listed anywhere is read as text.
+// `<input>` types with no ARIA role. Every type not listed anywhere reads as text.
 const NO_ROLE = /* @__PURE__ */ set('color date datetime-local file hidden month password time week');
 // The roles ACT counts as form fields. The first five take their name from their content too.
 const FIELD_ROLES = /* @__PURE__ */ set(
   'checkbox radio switch menuitemcheckbox menuitemradio combobox listbox searchbox slider spinbutton textbox',
 );
 const NAMED_BY_CONTENT = /* @__PURE__ */ set('checkbox radio switch menuitemcheckbox menuitemradio');
-// Elements whose text is not text anyone reads on the page.
+// Elements whose text is not read as part of the page.
 const SILENT = /* @__PURE__ */ set('script style template noscript iframe noembed noframes');
 
 const TEXT = /\S/;
 const TRUE = /^\s*true\s*$/i;
 const HIDDEN = /display\s*:\s*none|visibility\s*:\s*(hidden|collapse)/i;
 const HEADING = /^h[1-6]$/;
-// A tabindex the browser can read: an optional sign, then digits. Anything else it ignores.
+// A tabindex the browser can read: an optional sign, then digits. The browser ignores the rest.
 const TABINDEX = /^\s*[-+]?\d/;
-// A tab stop the browser puts before everything else: 0 or more zeroes then 1-9. `0`, `-1`, `0x2`
-// and `.5` all read as zero or less and are correct.
+// A tabindex that jumps ahead of the rest of the page: optional zeroes, then 1-9. `0`, `-1`, `0x2`
+// and `.5` all read as zero or less, so they pass.
 const AHEAD = /^\s*\+?0*[1-9]/;
-// Any tabindex the browser reads as zero or more, which is what puts an element in the tab order.
+// A tabindex the browser reads as zero or more. That puts the element in the tab order.
 const INTAB = /^\s*\+?\d/;
-// A `<select size>` the browser reads as more than one row. Its integers, not `Number()`'s: `2px`
-// is 2 and `1e3` is 1.
+// A `<select size>` the browser reads as more than one row. HTML's integer parsing applies, not
+// `Number()`'s: `2px` is 2 and `1e3` is 1.
 const ROWS = /^\s*\+?0*(?:[2-9]|[1-9]\d)/;
 const WHOLE = /^[-+]?\d+$/;
 const DECIMAL = /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i;
@@ -136,9 +136,9 @@ const DECIMAL = /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i;
 const FILENAME = /^\s*(\S+\.(jpe?g|png|gif|svg|webp|avif|bmp)|(img|dsc|image|photo|screenshot)[-_]?\d+)\s*$/i;
 
 /**
- * Every role that may be written on an element: ARIA's, the 1.3 draft's included, DPUB-ARIA's
- * `doc-*` and Graphics ARIA's `graphics-*`. The abstract ones (`widget`, `section`, `input`, …) are
- * left out: they exist only in the taxonomy and do nothing in markup.
+ * Every role that may appear in markup: ARIA's (the 1.3 draft included), DPUB-ARIA's `doc-*` and
+ * Graphics ARIA's `graphics-*`. Abstract roles (`widget`, `section`, `input`, …) are left out: they
+ * exist only in the taxonomy and do nothing in markup.
  * @internal
  */
 export const ROLES = /* @__PURE__ */ set(
@@ -148,8 +148,8 @@ export const ROLES = /* @__PURE__ */ set(
 );
 
 /**
- * DPUB roles that are a kind of link or image, and ARIA 1.3's synonym for `img`: the rules that
- * want a name from a link or an image want it from these too.
+ * DPUB roles that are a kind of link or image, plus `image`, ARIA 1.3's synonym for `img`. Rules
+ * that want a name from a link or an image want one from these too.
  * @internal
  */
 export const KIND: Record<string, string> = {
@@ -160,13 +160,13 @@ export const KIND: Record<string, string> = {
   'doc-cover': 'img',
   image: 'img',
 };
-// The roles that make something an image the way SVG means it: named by its own `<title>` child.
+// Roles that make an SVG element an image, named by its own `<title>` child.
 const GRAPHIC = /* @__PURE__ */ set('img graphics-document graphics-symbol');
 
 /**
  * The state a role cannot be read without. Only what ARIA 1.3 requires outright is here: a rule
- * that fires on correct markup is worse than one that misses. `separator` requires its
- * `aria-valuenow` only when focusable, which `checkRole` settles from the markup.
+ * that fires on correct markup is worse than one that misses. `separator` needs `aria-valuenow`
+ * only when focusable, which `checkRole` settles from the markup.
  * @internal
  */
 export const REQUIRED: Record<string, string> = {
@@ -183,10 +183,10 @@ export const REQUIRED: Record<string, string> = {
 };
 
 /**
- * The role an element already carries, for the roles that the tag settles on its own. The ones
- * left out, and why — an ancestor decides some, and CSS can take the role from others, so
- * restating it is how you put it back — are listed in itsy-html-spec's tables.test.ts. The tags whose own
- * attributes settle it (`<a>`, `<img>`, `<input>`, `<select>`) are handled in `implicitRole` below.
+ * The role each tag carries on its own, for the tags that settle it alone. itsy-html-spec's
+ * tables.test.ts lists the tags left out, and why: an ancestor decides some, and CSS can strip the
+ * role from others, so restating it puts it back (`<ul role="list">`). Tags whose own attributes
+ * settle it (`<a>`, `<img>`, `<input>`, `<select>`) are handled in `implicitRole` below.
  * @internal
  */
 export const IMPLICIT: Record<string, string> = {
@@ -239,8 +239,8 @@ export const IMPLICIT: Record<string, string> = {
 };
 
 /**
- * `<input>` types whose role holds whatever else is on the tag. The text-like ones are handled in
- * `implicitRole`: with a `list` they are a combobox only when it points at a `<datalist>`.
+ * `<input>` types whose role holds whatever else is on the tag. The text-like types are handled in
+ * `implicitRole`: with a `list`, they are a combobox only when it points at a `<datalist>`.
  * @internal
  */
 export const INPUT: Record<string, string> = {
@@ -255,9 +255,9 @@ export const INPUT: Record<string, string> = {
 };
 
 /**
- * The state an `<input>` reports for itself, whatever role it is given: a checkbox or radio button
- * its checkedness, a range or number its value. `<input type="checkbox" role="switch">` is the
- * native switch, and ARIA in HTML forbids the `aria-checked` a rule would otherwise ask it for.
+ * The state an `<input>` reports for itself, whatever role it is given: checkedness for a checkbox
+ * or radio, the value for a range or number. `<input type="checkbox" role="switch">` is the native
+ * switch, and ARIA in HTML forbids the `aria-checked` a rule would otherwise ask for.
  * @internal
  */
 export const NATIVE: Record<string, string> = {
@@ -267,13 +267,13 @@ export const NATIVE: Record<string, string> = {
   range: 'aria-valuenow',
 };
 
-/** An `<input>`'s type, as the browser reads it: any case, but no trimming, so `" checkbox"` is text. */
+/** An `<input>`'s type as the browser reads it: any case, no trimming, so `" checkbox"` is text. */
 const inputType = (a: Attrs) => (a.get('type') ?? '').toLowerCase();
 
 /**
- * The state an `<input>` reports for itself. A text input with a `list` is a combobox already,
- * showing and hiding its own suggestions, so it has `aria-expanded` covered; a type with a state
- * of its own reports that state instead, whatever `list` says.
+ * The state an `<input>` reports for itself. A text input with a `list` is already a combobox that
+ * shows and hides its own suggestions, so it covers `aria-expanded`. A type with its own state
+ * reports that state instead, whatever `list` says.
  */
 const nativeState = (a: Attrs): string | undefined =>
   NATIVE[inputType(a)] ?? (a.has('list') ? 'aria-expanded' : undefined);
@@ -291,7 +291,7 @@ const focusable = (tag: string, a: Attrs) => {
 
 /** The first global ARIA attribute on the element, if it has one. */
 const global = (a: Attrs) => [...a.keys()].find((k) => k.startsWith('aria-') && GLOBALS.has(k.slice(5)));
-/** Does the browser ignore a presentational role here? It does on anything focusable, or anything with a global ARIA attribute. */
+/** Does the browser ignore a presentational role here? It does on anything focusable or with a global ARIA attribute. */
 const conflicted = (tag: string, a: Attrs) => focusable(tag, a) || global(a) !== undefined;
 
 /** The first token of `role` the browser knows, lowercased, with `presentation` read as its synonym `none`. */
@@ -304,7 +304,7 @@ const explicitRole = (a: Attrs): string | undefined => {
   return known === 'presentation' ? 'none' : known;
 };
 
-/** The role this element has without a `role` attribute, when the markup on its own settles it. */
+/** The role this element has without a `role` attribute, when the markup alone settles it. */
 const implicitRole = (tag: string, a: Attrs): string | undefined => {
   if (HEADING.test(tag)) return 'heading';
   if (tag === 'a' || tag === 'area') return a.has('href') ? 'link' : undefined;
@@ -314,22 +314,22 @@ const implicitRole = (tag: string, a: Attrs): string | undefined => {
     const type = inputType(a);
     if (INPUT[type]) return INPUT[type];
     if (NO_ROLE.has(type)) return undefined;
-    // Text, search, and every type the browser does not know, which it reads as text. A `list`
-    // makes it a combobox, but only when it points at a <datalist>, which this cannot see.
+    // Text, search, and every unknown type, which the browser reads as text. A `list` makes it a
+    // combobox, but only when it points at a <datalist>, which this cannot see.
     if (a.has('list')) return undefined;
     return type === 'search' ? 'searchbox' : 'textbox';
   }
-  // A `<select>` is a listbox when it shows more than one row, and a combobox otherwise. Both are
-  // settled here, and both matter: without this, `<select role="combobox">` is reported as
-  // missing the `aria-expanded` that the element reports for itself.
+  // A `<select>` is a listbox when it shows more than one row, and a combobox otherwise. Both
+  // cases matter: otherwise `<select role="combobox">` is reported as missing the `aria-expanded`
+  // that the element reports for itself.
   if (tag === 'select') return a.has('multiple') || ROWS.test(a.get('size') ?? '') ? 'listbox' : 'combobox';
   return IMPLICIT[tag];
 };
 
 /**
  * The role the browser gives the element, as far as the markup settles it. `role="none"` counts
- * only where the browser honours it; WebKit's `role="text"` is honoured by WebKit alone, so an
- * element that carries it has no role anyone can be sure of.
+ * only where the browser honours it. WebKit's `role="text"` works in WebKit alone, so an element
+ * with it has no role anyone can be sure of.
  */
 const roleOf = (tag: string, a: Attrs): string | undefined => {
   const explicit = explicitRole(a);
@@ -338,7 +338,7 @@ const roleOf = (tag: string, a: Attrs): string | undefined => {
   return explicit ?? implicitRole(tag, a);
 };
 
-// The rules that wait for an element to close before they can say anything.
+// Rules that wait for an element to close before they can say anything.
 type Waiting =
   | 'empty-heading'
   | 'empty-link'
@@ -357,7 +357,7 @@ const why: Record<Exclude<Waiting, 'label-control'>, string> = {
   'field-label': 'a screen reader announces the control and nothing else',
 };
 
-/** Does it carry a name of its own, with something actually in it? */
+/** Does it carry a non-empty name of its own? */
 const names = (tag: string, a: Attrs) =>
   TEXT.test(a.get('aria-label') ?? '') ||
   TEXT.test(a.get('aria-labelledby') ?? '') ||
@@ -377,8 +377,8 @@ const checkRole = (report: A11yReport, tag: string, a: Attrs, at: number) => {
       at,
     );
   }
-  // WebKit's `text`, for VoiceOver, is known, so it is not reported above; no element has it
-  // already, and nothing below asks anything of it. Not ignored, so not ours to judge.
+  // WebKit's `text`, for VoiceOver, is known, so it is not reported above. No element has it
+  // implicitly, and no check below applies to it. The browser does not ignore it, so this passes.
   if (known === implicitRole(tag, a)) {
     const already = known === 'none' ? 'decoration' : `a \`${known}\``;
     return report(
@@ -399,11 +399,11 @@ const checkRole = (report: A11yReport, tag: string, a: Attrs, at: number) => {
   }
   // A custom element can carry the state through ElementInternals, which the markup never shows.
   if (tag.includes('-')) return;
-  // The state the role is read with, unless the element supplies it: one that already had the
+  // The state the role needs, unless the element supplies it. An element that already had the
   // role reports its own (the return above), and so does an `<input>` with the state built in.
   const need = REQUIRED[known] ?? (known === 'separator' && focusable(tag, a) ? 'aria-valuenow' : undefined);
   if (need && !a.has(need) && !(tag === 'input' && nativeState(a) === need)) {
-    // A heading is the one with something to fall back on: browsers read it as level 2.
+    // Only a heading has a fallback: browsers read it as level 2.
     const outcome =
       known === 'heading'
         ? 'a screen reader announces it as level 2, whatever level it is'
@@ -483,33 +483,33 @@ interface Frame {
 }
 
 const rules = (report: A11yReport): Visitor => {
-  // The depth of the nearest element that takes its subtree out of the page altogether: `hidden`,
-  // `inert`, `display: none`, `visibility: hidden`, a <template>. Nothing in it is read or reached.
-  // Depth rather than offset, so a void element such as `<img hidden>` releases on its next
-  // sibling instead of latching until the parent closes.
+  // The depth of the nearest element that takes its subtree off the page entirely: `hidden`,
+  // `inert`, `display: none`, `visibility: hidden`, a <template>. Nothing inside is read or reached.
+  // It tracks depth, not offset, so a void element such as `<img hidden>` releases at its next
+  // sibling instead of staying set until the parent closes.
   let unseen = Infinity;
   // The same for `aria-hidden="true"`, which hides a subtree from a screen reader but not from the
-  // keyboard: the one rule that looks inside it is the one about the keyboard.
+  // keyboard. Only the keyboard rule looks inside it.
   let muted = Infinity;
-  // The same for a closed <details> or <dialog>: shown later, but nothing in it takes focus yet.
+  // The same for a closed <details> or <dialog>: shown later, but nothing inside takes focus yet.
   let shelved = Infinity;
   const watch: Frame[] = [];
   const idTag = new Map<string, string>(); // every id, and the tag carrying it
   const fors: [id: string, at: number][] = []; // every `<label for>`, resolved at the end
   const labelled = new Set<string>(); // every id a `<label for>` names
-  const fields: [id: string | undefined, at: number, shown: string][] = []; // form fields nothing named yet
+  const fields: [id: string | undefined, at: number, shown: string][] = []; // form fields with no name yet
   let titles = 0; // <title> elements, outside <svg> and <template>: the first is the page's
   let page = -1; // where <html> started, when the markup is a whole page
 
   return {
     open(tag, a, at, anc) {
       const depth = anc.length;
-      if (depth <= unseen) unseen = Infinity; // out the other side of whatever was hidden
+      if (depth <= unseen) unseen = Infinity; // past the end of the hidden subtree
       if (depth <= muted) muted = Infinity;
       if (depth <= shelved) shelved = Infinity;
       const custom = tag.includes('-');
 
-      // What holds wherever it sits: a `<label for>` names its control even from a hidden label,
+      // These hold wherever the element sits: a `<label for>` names its control even when hidden,
       // and the page's title is its first <title>, hidden or not.
       const target = tag === 'label' ? a.get('for') : undefined;
       if (target) labelled.add(target);
@@ -520,10 +520,10 @@ const rules = (report: A11yReport): Visitor => {
 
       const unrendered = a.has('hidden') || a.has('inert') || HIDDEN.test(a.get('style') ?? '') || tag === 'template';
       if (unseen === Infinity && unrendered) unseen = depth;
-      if (unseen < Infinity) return; // nothing in here reaches anyone, so nothing in here is a bug
+      if (unseen < Infinity) return; // nothing here reaches anyone, so nothing here is a bug
 
-      // aria-hidden takes a subtree away from a screen reader, not from the keyboard. Whatever the
-      // keyboard can still reach in there, the element itself included, is a stop that says nothing.
+      // aria-hidden takes a subtree from a screen reader, not from the keyboard. Anything in it the
+      // keyboard still reaches, the element itself included, is a focus stop that says nothing.
       const ariaHidden = TRUE.test(a.get('aria-hidden') ?? '');
       const reachable =
         shelved === Infinity || (tag === 'summary' && depth === shelved + 1 && anc[shelved] === 'details');
@@ -550,16 +550,16 @@ const rules = (report: A11yReport): Visitor => {
       const shown = explicit && explicit === role ? `<${tag} role="${a.get('role')!.trim()}">` : `<${tag}>`;
       const svg = tag === 'svg' || anc.includes('svg');
 
-      // Anything inside an element we are watching can be the thing that names it. A custom
-      // element counts for both: it may carry its own label, or be a form control via
-      // ElementInternals, and we cannot see inside it either way.
+      // Anything inside a watched element can be what names it. A custom element counts for both:
+      // it may carry its own label or be a form control via ElementInternals, and its inside is
+      // hidden from this check either way.
       if (watch.length) {
         const named = custom || (role !== 'none' && names(tag, a));
         const control = custom || LABELABLE.has(tag);
         for (const f of watch) if (f.by === 'control' ? control : f.by === 'content' && named) f.ok = true;
       }
-      // An element this rule set waits on, until it closes. A void one has nothing inside it to
-      // wait for, so it is judged on its own attributes, now.
+      // Waits on an element until it closes. A void element has nothing inside to wait for, so it
+      // is judged now, on its own attributes.
       const wait = (
         rule: Waiting,
         ok: boolean,
@@ -570,7 +570,7 @@ const rules = (report: A11yReport): Visitor => {
         else if (!ok) report(rule, message, at);
       };
 
-      // Images: an <img> the browser exposes, an image button, anything else given an image role.
+      // Images: an <img> the browser exposes, an image button, or anything else with an image role.
       if (tag === 'img') {
         const alt = a.get('alt');
         if (role === 'img' && !names(tag, a)) {
@@ -631,10 +631,10 @@ const rules = (report: A11yReport): Visitor => {
         watch.push({ rule: 'label-control', at, depth, ok: !!target || a.has('id'), shown, by: 'control' });
       }
 
-      // A form field needs a name: from a <label>, `aria-label`, `aria-labelledby` or `title`, and on
+      // A form field needs a name: from a <label>, `aria-label`, `aria-labelledby` or `title`, or on
       // a text field `placeholder` as a last resort. A custom element around it may be the label.
-      // One whose `role="none"` the browser honours — a disabled one, with nothing global on it — is
-      // no field at all.
+      // A field whose `role="none"` the browser honours (a disabled one with no global ARIA
+      // attribute) is no field at all.
       if (!custom && role !== 'none' && !anc.some((x) => x.includes('-'))) {
         if ((tag === 'input' && !NOT_A_FIELD.has(inputType(a))) || tag === 'select' || tag === 'textarea') {
           // Every type the browser does not know is text, and takes a placeholder like text does.
@@ -651,7 +651,8 @@ const rules = (report: A11yReport): Visitor => {
 
       if (tag === 'a') {
         // An `<a>` with no href is a named anchor, or something that was meant to be a link.
-        // An id, a name, a tabindex or a role all say the author meant it; nothing else does.
+        // An id, a name, a tabindex, a role or `aria-disabled` says the author meant it; nothing
+        // else does.
         if (
           !a.has('href') &&
           !a.has('xlink:href') &&
@@ -676,7 +677,7 @@ const rules = (report: A11yReport): Visitor => {
           );
         }
       } else if (tag === 'iframe') {
-        // A frame out of the tab order is one nobody lands in, and the ACT rule leaves it alone too.
+        // Nobody lands in a frame outside the tab order, and the ACT rule skips it too.
         const t = a.get('tabindex');
         const tabbable = t === undefined || !TABINDEX.test(t) || INTAB.test(t);
         if (tabbable && !names(tag, a)) {
@@ -688,7 +689,7 @@ const rules = (report: A11yReport): Visitor => {
         }
       } else if (tag === 'figcaption') {
         const parent = anc[anc.length - 1];
-        // No parent at all means the caption is the whole fragment, which may well be deliberate.
+        // No parent means the caption is the whole fragment, which may be deliberate.
         if (parent && parent !== 'figure' && !parent.includes('-')) {
           report(
             'figcaption-parent',
@@ -730,7 +731,7 @@ const rules = (report: A11yReport): Visitor => {
 
     close(_tag, at) {
       const f = watch[watch.length - 1];
-      if (!f || f.at !== at) return; // not something we are watching; an unclosed one is code 9
+      if (!f || f.at !== at) return; // not a watched element; an unclosed one is code 9
       watch.pop();
       if (f.ok) return;
       if (f.rule === 'label-control') {

@@ -4,8 +4,8 @@ import { HtmlError, attrs, html, raw } from '#index';
 
 const s = (x: unknown) => String(x);
 // The production build has no markup audit, so what it refuses is the scanner's decision alone.
-// Where the dev build's audit reports the markup first, this is how a test sees the scanner.
-// Synchronous, so nothing else runs while the switch is off.
+// Where the dev build's audit reports the markup first, this lets a test see the scanner.
+// It is synchronous, so nothing else runs while the switch is off.
 const dev = globalThis as { __DEV__?: boolean };
 const prod = (f: () => unknown) => () => {
   dev.__DEV__ = false;
@@ -78,7 +78,7 @@ suite('contexts that only accept Html', () => {
     assert.equal(s(html`<p>a &lt;${'b'}</p>`), '<p>a &lt;b</p>');
   });
   test('a script with a `<!--` or `<![CDATA[` still open does not end at `</script>`', () => {
-    // In an HTML <script>, `<!--<script>` puts the tokenizer where `</script>` is text; in an SVG
+    // In an HTML <script>, `<!--<script>` puts the tokenizer where `</script>` is text. In an SVG
     // one, a comment or a CDATA section does the same. The value would be code either way.
     assert.throws(() => html`<script><!--<script></script>${'\nalert(1)//'}</script>`, {
       code: 6,
@@ -209,9 +209,9 @@ suite('scanner: attribute names survive separators', () => {
     );
   });
   test('whitespace is what HTML says it is, not what JavaScript says', () => {
-    // A vertical tab or a no-break space is part of a name or a value to the browser: after an `=`
-    // it starts an unquoted value, after a tag name it is more of the name, and after `</script`
-    // it is not the end of the script. Each would put the value somewhere escaping cannot guard.
+    // A vertical tab or a no-break space is part of a name or a value to the browser. After an `=`
+    // it starts an unquoted value. After a tag name it is more of the name. After `</script` it
+    // does not end the script. Each would put the value where escaping cannot guard it.
     assert.throws(
       prod(() => html`<p a=\u000b"${' onmouseover=alert(1)'}">x</p>`),
       { code: 5 },

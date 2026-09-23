@@ -1,14 +1,14 @@
 import { defineConfig } from 'tsdown';
 
-// One source, two builds. The build replaces `__DEV__` with `false` or `true`
-// and drops the code that can then never run: production throws bare error
-// codes, dev spells the messages out. package.json's `development` export
-// condition picks the dev file.
+// One source, two builds. Each build sets `__DEV__` to `false` or `true` and
+// drops the code that can then never run. Production throws bare error codes;
+// dev spells out the messages. The `development` export condition in
+// package.json picks the dev file.
 export default defineConfig([
   {
-    // Six public entries. `attrs` stands alone so a consumer who only wants
-    // `cx`/`attrs` in a class attribute never pulls in the template scanner;
-    // `check`, `frame`, `util` and `create` are opt-in and build on the root.
+    // Six public entries. `attrs` stands alone, so code that only needs
+    // `cx`/`attrs` never pulls in the template scanner. `check`, `frame`,
+    // `util` and `create` are opt-in and build on the root.
     entry: {
       index: 'src/index.ts',
       attrs: 'src/attrs.ts',
@@ -44,7 +44,7 @@ export default defineConfig([
     format: ['esm'],
     platform: 'neutral',
     target: 'es2022',
-    // The prod build's .d.ts serves both; `types` resolves before `development`.
+    // The prod build's .d.ts serves both. `types` resolves before `development`.
     dts: false,
     treeshake: true,
     minify: true,

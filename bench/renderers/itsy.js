@@ -3,13 +3,13 @@ import * as root from '@itsy/html';
 import { attrsOf, few, hostile, items, nav, one } from '../fixtures.js';
 
 /**
- * Built as a factory so ab.js can bind a second, older build of the library to the same
+ * A factory, so ab.js can bind a second, older build of the library to the same
  * templates and time the two side by side in one process.
  *
- * Each build must get its own call. An `Html` from one build is not `instanceof` the
- * other's, so a value that crossed between them would be escaped rather than passed
- * through — silently, and only in the nested cases. Keeping every template inside one
- * `make()` closure is what makes that impossible rather than merely unlikely.
+ * Each build needs its own call. An `Html` from one build is not `instanceof` the
+ * other's, so a value that crossed between them would be escaped instead of passed
+ * through, silently and only in the nested cases. Keeping every template inside one
+ * `make()` closure makes that impossible, not merely unlikely.
  */
 export const make = ({ html, attrs, createHtml }) => {
   const Link = (i) => html`<a href="${i.href}" class="link ${i.featured && 'is-featured'}">${i.name}</a>`;
@@ -31,9 +31,9 @@ export const make = ({ html, attrs, createHtml }) => {
     escape: () => String(html`<p>${hostile}</p>`),
     page: () =>
       String(html`<main><h1>Catalogue</h1>${nav.map(Group)}<ol>${few.map((i) => html`<li>${Link(i)}</li>`)}</ol></main>`),
-    // The whole point of attrs(): the names are not in the template, they come from an
-    // object at render time. Only the libraries that can do that themselves are in this
-    // case; see ATTR_CASES in harness.js.
+    // The point of attrs(): the names come from an object at render time, not from the
+    // template. Only the libraries that can do that themselves are in this case; see
+    // ATTR_CASES in harness.js.
     attrs: () =>
       String(html`<ul>${few.map((i) => html`<li><a ${attrs(attrsOf(i))}>${i.name}</a></li>`)}</ul>`),
     // Every renderer here caches its template analysis on the strings array. A fresh
@@ -43,12 +43,12 @@ export const make = ({ html, attrs, createHtml }) => {
       return String(h`<a href="${one.href}" class="link ${one.featured && 'is-featured'}">${one.name}</a>`);
     },
 
-    // Only ab.js runs these, and only because it is @itsy/html on both sides anyway.
+    // Only ab.js runs these, and only because both sides are @itsy/html anyway.
     //
-    // The `attrs` case above has to stay byte-identical to preact, which costs it cx()'s
-    // array form and any URL the guard would rewrite. These cover what that leaves out, so
-    // a change to one of those paths is not invisible. They are not a comparison with
-    // anything — they exist to make a diff measurable.
+    // The `attrs` case above must stay byte-identical to preact, so it cannot use cx()'s
+    // array form or any URL the guard would rewrite. These cover those paths, so a change
+    // to one of them stays visible. They compare against nothing; they exist to make a
+    // diff measurable.
     probes: {
       'attrs: booleans + tri-state': () => String(attrs({ disabled: true, hidden: false, draggable: true })),
       'attrs: cx() array class': () =>

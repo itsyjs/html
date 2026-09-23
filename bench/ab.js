@@ -1,33 +1,30 @@
 // Two builds of @itsy/html, side by side, in one process.
 //
-// Running `pnpm bench` twice and diffing the tables does not work: across processes the
-// same build drifts. Thirty measurements of byte-identical code across two runs moved a
-// median of 0.9%, p90 3.5%, and 4.4% at worst — lit moved 4.3% with nothing changed at
-// all. Anything under about 5% is invisible that way.
+// Running `pnpm bench` twice and diffing the tables does not work: the same build drifts
+// across processes. Over thirty measurements of byte-identical code in two runs, the
+// median moved 0.9%, p90 3.5%, and the worst 4.4%. lit moved 4.3% with nothing changed.
+// Anything under about 5% is invisible that way.
 //
-// So both builds are loaded here at once and every round times them back to back, with
-// the order alternating. What is reported is the median of the per-round *deltas*, not
-// the difference of two independently-taken medians: drift inside a round hits both
-// sides and cancels, which is the whole point.
+// So this script loads both builds at once. Every round times them back to back, in
+// alternating order. The report is the median of the per-round *deltas*, not the
+// difference of two separate medians. Drift inside a round hits both sides and cancels.
 //
-// Alternating is not quite enough on its own. Whichever side runs second in a round
-// inherits a warmer cache, so a delta taken from one round carries that position bias,
-// and the median across rounds only cancels it if the two positions happen to be evenly
-// balanced either side of it. Deltas are therefore taken from *pairs* of rounds — one
-// where HEAD went first and one where it went second — so the bias cancels inside each
-// sample rather than being left to average out. Without this, an untouched case reads a
+// Alternating alone is not enough. The side that runs second in a round inherits a warmer
+// cache, so each delta carries a position bias. The median across rounds cancels it only
+// if the two positions happen to balance around it. So each delta comes from a *pair* of
+// rounds: one where HEAD went first and one where it went second. The bias cancels inside
+// each sample instead of averaging out. Without this, an untouched case reads as a
 // confident 1.4% regression.
 //
 // Usage: pnpm bench:vs [rev]     (rev defaults to main)
 //
-// One thing this cannot measure: a change whose effect is process-global. Both builds are
-// loaded here at once, so whichever of them does something to the whole process does it to
-// the other one too, and the pairing cancels the very thing you wanted to see. Removing the
-// `class Html extends String` — worth 1.75x to 2.89x measured one build per process — showed
-// up here as +13%, because main's copy was still poisoning V8's string fast paths for both
-// sides. When a change touches builtins, prototypes or globals rather than just this
-// library's own code, measure it with one build per process instead and take the ~4%
-// cross-process noise floor as the cost of an honest answer.
+// Limit: this cannot measure a change with a process-global effect. Both builds share one
+// process, so whatever one does to the process, it does to the other too, and the pairing
+// cancels the very effect under test. Removing `class Html extends String` measured 1.75x
+// to 2.89x with one build per process, but only +13% here: main's copy still deoptimised
+// V8's string fast paths for both sides. For a change to builtins, prototypes or globals
+// rather than this library's own code, measure one build per process instead, and accept
+// the ~4% cross-process noise floor as the price of an honest answer.
 
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -45,18 +42,18 @@ const rev = process.argv[2] ?? 'main';
 /**
  * Build `rev`'s src into a throwaway directory.
  *
- * No worktree and no second install: src/ imports nothing but its own relative paths, so
- * `git archive` is enough, and the config is a plain object literal rather than a
- * defineConfig() call so the temp directory needs no node_modules of its own.
+ * No worktree and no second install. src/ imports only its own relative paths, so
+ * `git archive` is enough. The config is a plain object literal, not a defineConfig()
+ * call, so the temp directory needs no node_modules of its own.
  */
 const buildBaseline = (tmp) => {
   const tar = join(tmp, 'src.tar');
   execFileSync('git', ['archive', rev, 'src', '-o', tar], { cwd: root });
   execFileSync('tar', ['-xf', tar, '-C', tmp]);
 
-  // __DEV__ must be replaced here. There is no --define flag on the CLI, and without it
-  // the identifier survives into the bundle, the dev-only markup audit never shakes out,
-  // and the first render throws ReferenceError.
+  // __DEV__ must be replaced here, and the CLI has no --define flag. Without it the
+  // identifier survives into the bundle, the dev-only markup audit never shakes out, and
+  // the first render throws ReferenceError.
   writeFileSync(
     join(tmp, 'tsdown.config.mjs'),
     `export default ${JSON.stringify(
@@ -84,30 +81,30 @@ const buildBaseline = (tmp) => {
   return { index: join(tmp, 'dist/index.mjs'), create: join(tmp, 'dist/create.mjs') };
 };
 
-// Same TTY guard as harness.js: progress is for a human watching, and must not land in
+// Same TTY guard as harness.js. Progress is for a person watching and must not land in
 // a file when the output is piped.
 const note = (text) => {
   if (process.stderr.isTTY) process.stderr.write(`\r${' '.repeat(50)}\r${text}`);
 };
 
-// Smallest change this method will call real, in percent.
+// The smallest change this method reports as real, in percent.
 //
-// Not a guess. Comparing a revision against *itself* — where the true effect is zero by
-// construction — still produces bands that do not contain zero: two builds in one process
-// differ in module layout, load order and code alignment, and the paired statistic is
-// precise enough to measure that faithfully. It is real, reproducible, has nothing to do
-// with the source change, and is not garbage: the false-positive rate is the same with
-// --expose-gc and a real collector as without it.
+// This is measured, not guessed. Comparing a revision against *itself*, where the true
+// effect is zero, still produces bands that exclude zero. Two builds in one process differ
+// in module layout, load order and code alignment, and the paired statistic is precise
+// enough to see that. The effect is real and reproducible but unrelated to the source
+// change. It is not a GC artefact: the false-positive rate is the same with --expose-gc
+// and a real collector as without it.
 //
-// The whole band has to clear this, not just the median. Testing the median alone let
-// through roughly one bogus row per self-comparison — things like -2.1% (-3.7 … -0.8),
-// where the near edge is nowhere near the floor. Requiring the near edge to clear it
-// removes those without touching any real signal: the smallest genuine change measured
-// here, the URL-guard probe, reads +7.9% (6.5 … 9.0). Three rather than two because at two
-// a band would still occasionally graze it — one row in forty-odd, always around -2.0.
+// The whole band must clear this, not just the median. Testing the median alone let
+// through about one bogus row per self-comparison, such as -2.1% (-3.7 … -0.8), whose
+// near edge is far from the floor. Requiring the near edge to clear it removes those and
+// keeps every real signal: the smallest genuine change measured here, the URL-guard
+// probe, reads +7.9% (6.5 … 9.0). The floor is three, not two, because at two a band
+// still grazed it now and then: one row in forty-odd, always around -2.0.
 //
-// Re-run `node ab.js <this revision>` after touching the timing; if it reports a change
-// on identical source, this is too low.
+// After changing the timing, re-run `node ab.js <this revision>`. If it reports a change
+// on identical source, this floor is too low.
 const FLOOR = 3;
 
 const pct = (xs, p) => xs.slice().sort((a, b) => a - b)[Math.floor(p * (xs.length - 1))];
@@ -121,8 +118,8 @@ try {
   const before = make({ html: exports.html, attrs: exports.attrs, createHtml: exports.createHtml });
 
   // Everything worth diffing, flattened: the shared cases, then the two @itsy/html-only
-  // groups. `cold` is the template scan, and `probes` are the attrs paths the shared case
-  // cannot reach because it has to stay byte-identical to preact.
+  // groups. `cold` is the template scan. `probes` are the attrs paths the shared case
+  // cannot reach, because it must stay byte-identical to preact.
   const subjects = [
     ...CASE_KEYS.map((k) => ({ label: CASES[k], a: current[k], b: before[k] })),
     ...ATTR_KEYS.map((k) => ({ label: ATTR_CASES[k], a: current[k], b: before[k] })),
@@ -130,11 +127,11 @@ try {
     ...Object.keys(current.probes).map((n) => ({ label: n, a: current.probes[n], b: before.probes[n] })),
   ];
 
-  // Same library, so the two builds must agree byte for byte. This is not a formality:
-  // an Html value from one build is not `instanceof` the other's, so if the two renderers
-  // ever shared one, it would be escaped instead of passed through — silently, and only
-  // in the nested cases. A behaviour change between the revisions trips this too, which
-  // is worth stopping for before reading any timings.
+  // Same library, so the two builds must agree byte for byte. This matters: an Html value
+  // from one build is not `instanceof` the other's. If the two renderers ever shared one,
+  // it would be escaped instead of passed through, silently and only in the nested cases.
+  // A behaviour change between the revisions also trips this, and that is worth stopping
+  // for before reading any timings.
   for (const { label, a, b } of subjects) {
     if (a() !== b()) {
       throw new Error(
@@ -145,8 +142,8 @@ try {
 
   const rounds = 16; // even: every round is half of an order-cancelling pair
 
-  // Short measurements, many of them. The pairing needs rounds more than it needs any one
-  // round to be long, and mitata's own 642 ms default would make this a minute per case.
+  // Many short measurements. The pairing needs many rounds more than long ones, and
+  // mitata's 642 ms default would take a minute per case.
   const at = async (fn) => (await measure(() => do_not_optimize(fn()), { min_cpu_time: 40e6 })).p50;
 
   for (let i = 0; i < 12; i++) for (const { a, b } of subjects) (a(), b());
@@ -166,8 +163,8 @@ try {
         a.push(await at(fnA));
       }
     }
-    // One sample per adjacent pair of rounds, which is exactly one HEAD-first round plus
-    // one HEAD-second round, so the position advantage is inside both sums and divides out.
+    // One sample per adjacent pair of rounds: one HEAD-first round plus one HEAD-second
+    // round. The position advantage is inside both sums and divides out.
     const deltas = [];
     for (let r = 0; r + 1 < rounds; r += 2) {
       const ha = a[r] + a[r + 1];

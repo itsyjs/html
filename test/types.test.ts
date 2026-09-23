@@ -1,5 +1,5 @@
 // Compile-time assertions. `tsc --noEmit` (part of `pnpm check`) fails if a `@ts-expect-error` line stops
-// erroring, which keeps the README's "a type error before that" true. Nothing here runs: the function is
+// erroring. That keeps the README's "a type error before that" true. Nothing here runs: the function is
 // never called, and the one test only gives `node --test` something to report.
 import { test } from 'node:test';
 import { type Html, type Renderable, attrs, html, raw } from '#index';

@@ -10,9 +10,9 @@
 // The nesting tables come from Svelte's html-tree-validation.js (MIT), which
 // took them from React's validateDOMNesting. The `<p>` list is completed from the spec.
 //
-// itsy-html-spec's tree.test.ts holds the walk to its contract: whenever it reports nothing, the
-// tree it hands a rule set is the one parse5 builds, over the html5lib parser suite; and over
-// generated nestings, it reports one exactly when parse5 changes what is written.
+// itsy-html-spec's tree.test.ts checks the walk against parse5. Over the html5lib parser suite:
+// when the audit reports nothing, the tree it hands a rule set is the one parse5 builds. Over
+// generated nestings: it reports a problem exactly when parse5 changes what is written.
 import { HtmlError } from './shared.ts';
 
 /** One thing wrong with the markup, as `check()` reports it. */
@@ -56,8 +56,8 @@ export type Report = (rule: string, message: string, at: number) => void;
  */
 export interface Visitor {
   /**
-   * A start tag, with its attributes and the elements it sits inside, outermost first. Both are
-   * the rule set's to keep: the walk carries on with its own.
+   * A start tag, with its attributes and the elements it sits inside, outermost first. The rule
+   * set may keep both: the walk carries on with its own copies.
    */
   open?: (tag: string, attrs: ReadonlyMap<string, string>, at: number, ancestors: readonly string[]) => void;
   /**
@@ -92,7 +92,8 @@ export interface Visitor {
  */
 export type RuleSet = (report: Report) => Visitor;
 
-// Stands in for a `${…}` when a template is audited. Inside a tag it means "some attributes we cannot see".
+// Stands in for a `${…}` when a template is audited. Inside a tag it means attributes the audit
+// cannot see.
 const EXPRESSION = '${…}';
 
 const set = (names: string) => new Set(names.split(' '));
@@ -106,10 +107,10 @@ export const VOID = set(
   'area base br col embed hr img input link meta param source track wbr basefont bgsound frame keygen',
 );
 // Elements whose content the browser reads as text up to the end tag, so a `<` inside them is not a
-// tag. `<noscript>` is read the way a browser with scripting on reads it, which is every browser
-// anyone ships. `<plaintext>` has no end tag at all: everything after it is text.
+// tag. `<noscript>` is read as a browser with scripting on reads it, which is every shipping
+// browser. `<plaintext>` has no end tag at all: everything after it is text.
 const RAW = set('script style textarea title iframe noembed noframes noscript xmp');
-// Inside these, `/>` really does self-close, and the HTML nesting rules do not apply.
+// Inside these, `/>` does self-close, and the HTML nesting rules do not apply.
 const FOREIGN = set('svg math');
 // Where SVG and MathML hand their content back to HTML, with its nesting rules and void elements.
 // `<annotation-xml>` is one too, but only when its encoding says HTML; that is decided per element.
@@ -128,7 +129,7 @@ const TABLE_PARTS = set('caption col colgroup tbody td tfoot th thead tr');
 // The elements a table part may start inside: the table's own, and a <template>, whose content
 // can be a piece of a table.
 const TABLE_CONTEXT = set('table caption colgroup tbody thead tfoot tr td th template');
-// The elements an implied end tag closes: the ones whose end tag the spec lets you leave out.
+// The elements an implied end tag closes: the ones whose end tag the spec makes optional.
 const IMPLIED = set('dd dt li optgroup option p rb rp rt rtc');
 // Where the parser stops looking for an element "in scope": the edges of a table cell, an object,
 // a template, and the places SVG and MathML hand their content back to HTML.
@@ -166,9 +167,9 @@ const IN_TABLE = set('table');
 const CELL: Rule = { descendant: [...TABLE_PARTS], resetBy: IN_TABLE };
 const SECTION: Rule = { direct: ['caption', 'col', 'colgroup', 'tbody', 'thead', 'tfoot'] };
 
-// Elements the browser closes for you when one of the listed tags starts. The spec lets their
-// end tags be left out; this audit reports them anyway, so a template reads as it parses. The
-// lists are the parser's, which closes more than the spec's list of end tags you may leave out.
+// Elements the browser closes by itself when one of the listed tags starts. The spec makes their
+// end tags optional; the audit reports them anyway, so a template reads as it parses. The lists
+// are the parser's, which closes more than the spec's list of optional end tags.
 const CLOSES: Record<string, Rule> = {
   li: { direct: ['li'] },
   dt: DT,
@@ -256,7 +257,7 @@ export const audit = (
   const n = text.length;
   const near = (at: number) => text.slice(Math.max(0, at - 40), at + 30).replace(/\s+/g, ' ');
   const problem = (code: number, at: number, message: string) => report({ code, message, at, near: near(at) });
-  // The rule set, if there is one, reporting through the same list.
+  // The rule set, if any, reports into the same list.
   const visit = ruleSet?.((r, message, at) => report({ rule: r, message, at, near: near(at) }));
 
   const stack: string[] = []; // the elements currently open, outermost first
@@ -426,18 +427,19 @@ export const audit = (
     } else if (name === 'head' && (headDone || stack.some((e) => e !== 'html'))) {
       problem(13, at, '`<head>` after the head: the browser drops the tag');
     } else if (TABLE_PARTS.has(name) && stack.length) {
-      // The nearest table part, <template> or custom element decides. None at all, or a <template>
-      // with something else between, and the parser is reading body content, where this means nothing.
+      // The nearest table part, <template> or custom element decides. If there is none, or it is a
+      // <template> with something else in between, the parser is reading body content, where a
+      // table part means nothing.
       let k = stack.length - 1;
       while (k >= 0 && !TABLE_CONTEXT.has(stack[k]!) && !stack[k]!.includes('-')) k--;
       if (k < 0 || (stack[k] === 'template' && k < stack.length - 1)) {
         problem(13, at, `\`<${name}>\` outside a table: the browser drops the tag`);
       }
     }
-    // Would this tag close the open element for us, as in `<li>a<li>b` or `<p>text<div>`? The browser allows
-    // it; this audit wants the end tag written. Report it, then do what the browser does. Inside a
-    // <ruby>, an annotation closes every element whose end tag may be left out, the way an end tag
-    // the parser implies does; an <rt> or <rp> leaves an <rtc> open, since it may hold them.
+    // Does this tag close the open element, as in `<li>a<li>b` or `<p>text<div>`? The browser
+    // allows it; the audit wants the end tag written. Report it, then do what the browser does.
+    // Inside a <ruby>, an annotation closes every element with an optional end tag, as an implied
+    // end tag does. An <rt> or <rp> leaves an <rtc> open, since an <rtc> may hold them.
     const annotation = /^r(b|p|t|tc)$/.test(name) && inScope('ruby');
     while (stack.length) {
       const top = stack[stack.length - 1]!;
@@ -455,8 +457,8 @@ export const audit = (
       );
       pop();
     }
-    // A hidden <input> is the one element a table keeps where it is written. Attributes we cannot
-    // see might make it one.
+    // A hidden <input> is the one element a table keeps where it is written. Attributes the audit
+    // cannot see might make it one.
     const type = attrMap.get('type');
     const hidden = name === 'input' && (unseen || /^hidden$/i.test(type ?? '') || !!type?.includes(EXPRESSION));
     // Is this tag allowed where it is? Custom elements may hold anything, and a
@@ -482,7 +484,7 @@ export const audit = (
       }
     }
     // Everything the browser would have closed is closed by now, so the ancestors are the real ones.
-    // <br>, <img> and friends never open anything, though a rule still wants to see them.
+    // Void elements like <br> and <img> never open anything, but a rule still sees them.
     started = true;
     enter(name, attrMap, at);
     if (isVoid) return false;
@@ -564,8 +566,8 @@ export const audit = (
     const attrMap = new Map<string, string>(); // this tag's attributes, as the browser keeps them
     const seen = new Set<string>(); // attribute names on this tag, to spot duplicates
     let selfClosing = false;
-    let unseen = false; // did a `${…}` stand for attributes we cannot see?
-    let done = false; // did we reach the `>`?
+    let unseen = false; // did a `${…}` stand for attributes the audit cannot see?
+    let done = false; // was the `>` reached?
     while (j < n && !done) {
       const ch = text[j]!;
       if (WS.test(ch)) j++;
@@ -579,7 +581,7 @@ export const audit = (
           j += 2;
         } else j++; // a stray `/`, which the browser ignores
       } else if (text.startsWith(EXPRESSION, j)) {
-        unseen = true; // a `${…}` in the tag: attributes we cannot see
+        unseen = true; // a `${…}` in the tag: attributes the audit cannot see
         j += EXPRESSION.length;
       } else if (ch === '<') {
         problem(
@@ -663,7 +665,7 @@ export const audit = (
     }
   }
 
-  // The end. Anything still open is an error, unless its end tag is optional.
+  // The end. Anything still open is an error, even an element whose end tag is optional.
   for (let m = stack.length - 1; m >= 0; m--) {
     const name = stack[m]!;
     problem(9, openedAt[m]!, `\`<${name}>\` is never closed`);

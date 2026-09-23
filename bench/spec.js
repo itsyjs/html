@@ -1,10 +1,10 @@
 // Pure data: the cases and where each renderer lives. Importing this must not import any
-// renderer — that is the whole point of it being a separate file.
+// renderer. That is why it is a separate file.
 //
-// table.js measures each renderer in its own process, and that process should contain that
+// table.js measures each renderer in its own process, and that process should hold that
 // renderer and nothing else. Loading six other template libraries alongside it is not neutral:
-// renderers/lit.js installs a global DOM shim on import, and until recently @itsy/html declared
-// a String subclass that cost every other library in the process up to 2.8x.
+// renderers/lit.js installs a global DOM shim on import, and @itsy/html once declared a String
+// subclass that slowed every other library in the process by up to 2.8x.
 
 /** The cases every renderer implements, and the label each carries wherever it is printed. */
 export const CASES = {
@@ -21,9 +21,9 @@ export const CASE_KEYS = Object.keys(CASES);
  *
  * Kept out of `CASES` on purpose: that list feeds the relative-speed table, which needs every
  * renderer to implement every key. lit is absent because @lit-labs/ssr cannot render an element
- * part at all, and hono and ghtml because neither has any attribute mechanism — an object
- * interpolates as `[object Object]`, so the only route is building the string yourself, which
- * would time our builder rather than the library. See README.
+ * part at all. hono and ghtml are absent because neither has any attribute mechanism: an object
+ * interpolates as `[object Object]`. The only route is building the string by hand, which would
+ * time the bench's own builder rather than the library. See README.
  */
 export const ATTR_CASES = { attrs: 'attributes from an object' };
 export const ATTR_KEYS = Object.keys(ATTR_CASES);

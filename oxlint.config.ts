@@ -12,8 +12,8 @@ export default defineConfig({
   overrides: [
     {
       // The docs sit outside every tsconfig `include`, so the type-aware rules
-      // have no program to ask. Widening the root tsconfig instead would pull
-      // docs into `pnpm typecheck`, which has no DOM lib on purpose.
+      // have no program to ask. Widening the root tsconfig would pull the docs
+      // into `pnpm typecheck`, which has no DOM lib on purpose.
       files: ['docs/**'],
       plugins: [],
       rules: {},

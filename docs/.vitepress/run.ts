@@ -1,6 +1,6 @@
-// Evaluates a ```ts run fence at docs build time and returns what to show
-// beneath it. Runs in Node against the library source (the `#*` subpaths in
-// package.json), so a broken example fails the build rather than the reader.
+// Runs a ```ts run fence at docs build time and returns what to show beneath
+// it. Runs in Node against the library source (the `#*` subpaths in
+// package.json), so a broken example fails the build, not the reader.
 import { stripTypeScriptTypes } from 'node:module';
 import vm from 'node:vm';
 import type { Html, HtmlError } from '#index';
@@ -10,8 +10,8 @@ import type { Finding, Problem } from '#check';
 // loads, so error messages and `check()` behave as they do in the dev build.
 (globalThis as { __DEV__?: boolean }).__DEV__ = true;
 
-// Every runtime export of every public entry, as one flat scope. A dynamic
-// import with a variable keeps Vite's config bundler from inlining these, so
+// Every runtime export of every public entry, in one flat scope. A dynamic
+// import of a variable stops Vite's config bundler from inlining these, so
 // Node resolves the subpaths itself.
 const ENTRIES = ['#index', '#attrs', '#util', '#frame', '#check', '#create'];
 const scope: Record<string, unknown> = {};
@@ -36,10 +36,10 @@ const isProblem = (x: unknown): x is Problem | Finding =>
 const problem = (p: Problem | Finding) =>
   `${'rule' in p ? p.rule : `E${p.code}`}: ${p.message}${p.near ? ` — near "${p.near}"` : ''}`;
 
-// The library's own imports are stripped and its exports provided as globals,
-// so an example can import or not, whichever reads best. `export` is dropped
-// from declarations for the same reason. Any other import is a build error:
-// such an example cannot be runnable.
+// The library's own imports are removed and its exports are globals, so an
+// example may import them or not, whichever reads best. `export` is dropped
+// from declarations for the same reason. Any other import is a build error,
+// since such an example cannot run.
 const prepare = (source: string) =>
   stripTypeScriptTypes(
     source
@@ -53,7 +53,7 @@ export const run = (source: string): Output => {
   const script = new vm.Script(prepare(source), { filename: 'example.ts' });
   let value: unknown;
   try {
-    // The completion value: whatever the last expression statement evaluated to.
+    // The completion value: what the last expression statement evaluated to.
     value = script.runInNewContext({ ...scope });
   } catch (e) {
     // A documented outcome, not a broken example.

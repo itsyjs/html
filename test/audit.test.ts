@@ -93,8 +93,8 @@ suite('template audit: what the parser would repair', () => {
   });
 });
 
-// What the parser closes for you (9) and what it drops, folds in or moves (13), each case as
-// parse5 builds it. The clean ones are the near-misses: nesting the parser keeps as written.
+// What the parser closes on its own (9) and what it drops, folds in or moves (13), each case
+// as parse5 builds it. The clean cases are the near-misses: nesting the parser keeps as written.
 suite('the parser, element by element', () => {
   const first = (markup: string) => check(markup, { a11y: false })[0];
   test('the tags that close an open <p>', () => {
@@ -260,8 +260,8 @@ suite('check(): the output validator', () => {
     assert.deepEqual(codes('<div itemref="a b"></div><i id="a"></i>'), [15]);
   });
   test('a Turkish dotted capital I does not shift every offset after it', () => {
-    // '\u0130'.toLowerCase() is two characters, so lowercasing the whole string used to move every
-    // index after it and the scan came apart: this threw code 10 and check() reported four problems.
+    // '\u0130'.toLowerCase() is two characters. Lowercasing the whole string used to shift every
+    // index after it and break the scan: this threw code 10, and check() reported four problems.
     assert.doesNotThrow(() => html`<h1>\u0130stanbul</h1>`);
     assert.equal(String(html`<p title="\u0130x">y</p>`), '<p title="\u0130x">y</p>');
     assert.deepEqual(codes('<nav aria-label="\u0130stanbul"><a href="/">Ev</a></nav>'), []);
@@ -275,7 +275,7 @@ suite('check(): the output validator', () => {
 });
 
 // What a rule set sees. These pin the contract src/a11y.ts is written against, so a change
-// here should break loudly rather than quietly misinform a rule.
+// here breaks loudly instead of quietly misinforming a rule.
 const trace = (markup: string, ids = true) => {
   const log: string[] = [];
   const spy: RuleSet = () => ({
@@ -398,7 +398,7 @@ suite('the visitor a rule set is handed', () => {
 });
 
 // The text hook, rule-set composition and `check.enabled`: the parts of the dev surface a project
-// builds its own rules on, so the contract is pinned here rather than left to the a11y suite.
+// builds its own rules on. The contract is pinned here, not left to the a11y suite.
 const texts = (markup: Parameters<typeof check>[0]) => {
   const log: [string, number][] = [];
   const spy: RuleSet = () => ({ text: (content, at) => log.push([content, at]) });
@@ -488,17 +488,17 @@ suite('rule sets compose', () => {
   test('project rules and the accessibility rules run together', () => {
     const out = check('<img src="a">', { rules: seen('house') });
     // Both fire from `open` at offset 0, and the sort is stable, so this also pins the order:
-    // built-in first. On a tie it is report order that decides, so a finding from `close` comes
-    // after one from `open` at the same offset, whichever set reported it.
+    // built-in first. On a tie, report order decides, so a finding from `close` comes after one
+    // from `open` at the same offset, whichever set reported it.
     assert.deepEqual(
       out.map((p) => ('rule' in p ? p.rule : p.code)),
       ['img-alt', 'house'],
     );
   });
   test('composed with a project’s rules, the accessibility rules lose nothing', () => {
-    // Passing `rules` at all puts the built-in rules behind the composition, so every hook has to
-    // come through it: `close` reports the empty button, `end` the label pointing at a <b>, and
-    // `text` is what names the link — without it, the link would be reported empty.
+    // Passing `rules` at all puts the built-in rules behind the composition, so every hook must
+    // pass through it. `close` reports the empty button, `end` the label pointing at a <b>, and
+    // `text` names the link. Without `text`, the link would be reported empty.
     const page = '<button></button><label for="x">y</label><b id="x"></b><a href="/">Home</a>';
     const names = (r: ReturnType<typeof check>) => r.map((p) => ('rule' in p ? p.rule : p.code));
     assert.deepEqual(names(check(page)), ['empty-button', 'label-for']);
@@ -538,9 +538,9 @@ suite('rule sets compose', () => {
 });
 
 suite('check(): options a JavaScript caller can send', () => {
-  // `null` is outside the types, so it cannot be a type error, and it must not be a throw either.
-  // In place of the options it leaves them all out. Inside them it reads as `false` wherever it
-  // lands: the accessibility rules off, no rules of your own, the id checks off.
+  // `null` is outside the types, so it cannot be a type error, and it must not throw either. In
+  // place of the options, it leaves them all out. Inside them, it reads as `false` wherever it
+  // lands: the accessibility rules off, no project rules, the id checks off.
   const nul = null as unknown as undefined;
   const page = '<img src="a"><label for="x">y</label>';
   const tags = (r: ReturnType<typeof check>) => r.map((p) => ('rule' in p ? p.rule : p.code));
@@ -556,7 +556,7 @@ suite('check(): options a JavaScript caller can send', () => {
 
 suite('check.enabled', () => {
   test('is true wherever the checks actually run', () => {
-    // The production build sets it false; test/built/output.test.ts asserts that against dist/.
+    // The production build sets it false. test/built/output.test.ts asserts that against dist/.
     assert.equal(check.enabled, true);
     assert.notDeepEqual(check('<div>'), []);
   });

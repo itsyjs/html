@@ -108,7 +108,7 @@ An empty list means these rules found nothing, not that the page is accessible.
 | ---------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `img-alt`                    | an image the browser exposes with no name: `<img>` with no `alt`, `<input type="image">`, `role="img"` |
 | `img-alt-filename`           | `alt` that is only a file name, like `photo-3.png`                                                     |
-| `a-href`                     | `<a>` with no `href`, `id`, `name`, `tabindex` or `role`                                               |
+| `a-href`                     | `<a>` with no `href`, `id`, `name`, `tabindex`, `role` or `aria-disabled`                              |
 | `html-lang`                  | `<html>` with no `lang`, or only whitespace in it                                                      |
 | `iframe-title`               | an `<iframe>` in the tab order with no `title`                                                         |
 | `empty-heading`              | a heading — `<h1>`…`<h6>` or `role="heading"` — with no text and nothing naming it                     |

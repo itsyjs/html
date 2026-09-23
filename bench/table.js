@@ -1,32 +1,32 @@
-// The comparison tables: every column gets one unit, and the first drops units entirely,
-// because a unit per row is useless when you read down a column — 947 µs against 2.66 ms
-// against 190 µs is three conversions before you know who won.
+// The comparison tables. Each column gets one unit, and the first table drops units
+// entirely. A unit per row is useless when reading down a column: 947 µs against 2.66 ms
+// against 190 µs takes three conversions to see who won.
 //
-// Every renderer is measured in its own process, containing that renderer and nothing else.
+// Each renderer is measured in its own process, containing that renderer and nothing else.
 //
-// That is not fussiness. A process holding all seven does not measure any of them honestly:
-// renderers/lit.js installs a global DOM shim on import, and @itsy/html used to declare a
-// String subclass, which cost every other library in the process up to 2.8x — enough to
-// reverse who won. Hence spec.js, which carries the case list and the module paths and
-// deliberately imports no renderer, so a child can load exactly one.
+// This is not fussiness. A process holding all seven measures none of them honestly:
+// renderers/lit.js installs a global DOM shim on import, and @itsy/html once declared a
+// String subclass that slowed every other library in the process by up to 2.8x, enough to
+// reverse who won. Hence spec.js: it carries the case list and the module paths and
+// imports no renderer, so a child can load exactly one.
 //
-// One library per process is also how the thing actually runs in production.
+// One library per process is also how a renderer runs in production.
 
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { do_not_optimize, measure } from 'mitata';
 import { ATTR_CASES, ATTR_KEYS, ATTR_RENDERERS, CASES, CASE_KEYS, MIN_CPU_TIME, RENDERERS } from './spec.js';
 
-// Child: measure one renderer and hand the numbers back as JSON. Note what is *not* imported
-// above — harness.js pulls in every renderer, so the child must never touch it.
+// Child: measure one renderer and return the numbers as JSON. Note what is *not* imported
+// above: harness.js pulls in every renderer, so the child must never touch it.
 const only = process.argv[2];
 if (only !== undefined) {
   const spec = RENDERERS[Number(only)];
   const r = (await import(spec.module))[spec.export];
   const keys = ATTR_RENDERERS.includes(spec.name) ? [...CASE_KEYS, ...ATTR_KEYS] : CASE_KEYS;
 
-  // Warm the process. mitata warms each function it is handed but cannot do this, and measured
-  // cold a case reads ~30% slow.
+  // Warm the process. mitata warms each function it is given but not the process, and a case
+  // measured cold reads ~30% slow.
   for (let i = 0; i < 12; i++) for (const k of keys) r[k]();
 
   const mine = {};
@@ -50,8 +50,8 @@ for (const [i, spec] of RENDERERS.entries()) {
 }
 if (process.stderr.isTTY) process.stderr.write(`\r${' '.repeat(60)}\r`);
 
-// One unit for a whole column, chosen from the column median. Not from the fastest
-// entry: that is the unescaped baseline, and it would put the real contenders in the
+// One unit for a whole column, chosen from the column median, not the fastest entry.
+// The fastest is the unescaped baseline, and it would put the real contenders in the
 // thousands of the unit below.
 const unit = (row) => {
   const sorted = Object.values(row).sort((a, b) => a - b);
@@ -76,8 +76,8 @@ const speed = (key, name) => ns[key][baseline.name] / ns[key][name];
 const mean = (name) => Math.exp(CASE_KEYS.reduce((s, k) => s + Math.log(speed(k, name)), 0) / CASE_KEYS.length);
 const order = [...contenders].sort((a, b) => mean(b.name) - mean(a.name));
 
-// Both tables take their headers and their cells from CASE_KEYS, so a case added in one
-// place cannot end up labelled with another one's name.
+// Both tables take their headers and cells from CASE_KEYS, so a case added in one place
+// cannot end up labelled with another one's name.
 render(
   'Relative speed',
   `Higher is faster. ${baseline.name} is 1.00 in every column, so 2.11 means twice as fast as it and 0.50 means half.`,

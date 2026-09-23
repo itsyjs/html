@@ -2,8 +2,8 @@ import { suite, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { check } from '#check';
 
-// Every case here came out of an adversarial review of the rule it sits under: the clean ones are
-// the near-misses that a sloppy implementation fires on, and they are the point of the file.
+// Every case here came out of an adversarial review of the rule it sits under. The clean cases are
+// the near-misses a sloppy implementation fires on. They are the point of the file.
 const found = (markup: string) =>
   check(markup)
     .flatMap((p) => ('rule' in p ? [p.rule] : []))
@@ -61,10 +61,10 @@ suite('a11y rules', () => {
       [],
     );
     assert.deepEqual(found('<iframe src="/x" title=""></iframe>'), ['iframe-title']);
-    // aria-hidden takes the frame from a screen reader but not from the tab order: that is its own finding.
+    // aria-hidden hides the frame from a screen reader but not from the tab order. That is a separate finding.
     assert.deepEqual(found('<iframe src="/x" aria-hidden="true"></iframe>'), ['aria-hidden-focus']);
     assert.deepEqual(found('<iframe src="/x" aria-hidden="true" tabindex="-1"></iframe>'), []);
-    // Out of the tab order, a frame is one nobody lands in; the ACT rule leaves it alone too.
+    // Out of the tab order, nobody lands in the frame. The ACT rule leaves it alone too.
     assert.deepEqual(found('<iframe src="/x" tabindex="-1"></iframe>'), []);
     assert.deepEqual(found('<iframe src="/x" title=" "></iframe>'), ['iframe-title']);
     // A frame can be tabbed to, so the browser ignores role="none" on it.
@@ -129,7 +129,7 @@ suite('a11y rules', () => {
     assert.deepEqual(found('<button type="button" aria-hidden="true" tabindex="-1"></button>'), []);
     assert.deepEqual(found('<button type="button" title="Close"></button>'), []);
     assert.deepEqual(found('<button type="button"><span></span>Save</button>'), []);
-    // A script's text is code, and a <noscript>'s is never shown: neither names anything.
+    // A script's text is code, and a <noscript>'s text never shows. Neither names anything.
     assert.deepEqual(found('<button><script>save()</script></button>'), ['empty-button']);
     assert.deepEqual(found('<button><noscript>Save</noscript></button>'), ['empty-button']);
   });
@@ -194,8 +194,8 @@ suite('a11y rules', () => {
     assert.deepEqual(found('<div aria-invalid="spelling"></div>'), []);
     assert.deepEqual(found('<button aria-expanded="FALSE">Menu</button>'), []);
     assert.deepEqual(found('<a href="/now" aria-current="page">Now</a>'), []);
-    // Each takes what the spec lists for it: `mixed` only on the two tristates, `undefined` only
-    // where it is written into the attribute's values.
+    // Each takes the values the spec lists for it: `mixed` only on the two tristates, `undefined`
+    // only where the attribute's value list includes it.
     assert.deepEqual(found('<button aria-expanded="mixed">Menu</button>'), ['aria-boolean']);
     assert.deepEqual(found('<div aria-required="undefined" role="textbox" aria-label="x"></div>'), ['aria-boolean']);
     assert.deepEqual(found('<button aria-pressed="undefined">Bold</button>'), []);
@@ -372,8 +372,8 @@ suite('turning rules off', () => {
   });
 });
 
-// The role rules. As above, the clean cases are the point: these read a hand-written table, so a
-// missing entry shows up as a finding on correct markup rather than as a miss.
+// The role rules. As above, the clean cases are the point. These rules read a hand-written table,
+// so a missing entry shows up as a finding on correct markup, not as a miss.
 suite('role rules', () => {
   test('role-unknown: a role no browser knows', () => {
     assert.deepEqual(found('<div role="buton">x</div>'), ['role-unknown']);
@@ -393,10 +393,10 @@ suite('role rules', () => {
     assert.deepEqual(found('<div role="switch button" aria-checked="true">x</div>'), []);
     assert.deepEqual(found('<div role="doc-abstract">x</div>'), []); // DPUB-ARIA
     assert.deepEqual(found('<div role="graphics-document">x</div>'), []); // Graphics ARIA
-    // Never ARIA's, but WebKit reads it, for VoiceOver: not ignored, so not reported.
+    // Not an ARIA role, but WebKit reads it for VoiceOver. It is not ignored, so it is not reported.
     assert.deepEqual(found('<span role="text">a<br>b</span>'), []);
     assert.deepEqual(found('<span role="nonsense text">x</span>'), []);
-    // No other browser takes it, so it is no role anyone can be sure of: a finding shows the tag alone.
+    // No other browser takes it, so no role is certain. A finding shows the tag alone.
     assert.match(check('<input role="text">')[0]!.message, /^`<input>` has no label/);
     assert.deepEqual(found('<div role="nonsense alsononsense">x</div>'), ['role-unknown']);
     // A typo in a role from those vocabularies is no role at all, and neither is a hyphenated ARIA one.
@@ -452,8 +452,8 @@ suite('role rules', () => {
     assert.deepEqual(found('<html lang="en" role="document"><head><title>t</title></head><body>x</body></html>'), []);
   });
   test('role-redundant: a list may restate its role', () => {
-    // Safari drops the list role from a list styled `list-style: none`, and role="list" is how you
-    // put it back, so it is not redundant in practice.
+    // Safari drops the list role from a list styled `list-style: none`, and role="list" puts it
+    // back. So it is not redundant in practice.
     assert.deepEqual(found('<ul role="list"><li>x</li></ul>'), []);
     assert.deepEqual(found('<ol role="list"><li>x</li></ol>'), []);
     assert.deepEqual(found('<menu role="list"><li>x</li></menu>'), []);
@@ -521,8 +521,8 @@ suite('role rules', () => {
     // Given its own role back, an element reports its own state. That is role-redundant's business.
     assert.deepEqual(found('<input type="checkbox" role="checkbox" aria-label="x">'), ['role-redundant']);
     assert.deepEqual(found('<input type="range" role="slider" aria-label="x">'), ['role-redundant']);
-    // A type with spaces round it is no type the browser knows, so this is a text input, and a text
-    // input given the checkbox role owes it its state.
+    // A type with spaces around it is no type the browser knows, so this is a text input. A text
+    // input given the checkbox role owes its state.
     assert.deepEqual(found('<input type=" checkbox " role="checkbox" aria-label="x">'), ['role-required-props']);
     // Given another role, a checkbox or radio button still reports its checkedness, and ARIA in HTML
     // forbids aria-checked on one. This is the native switch.

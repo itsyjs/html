@@ -17,10 +17,10 @@ export const cx = (...values: ClassValue[]): string => {
   let out = '';
   for (const v of values) {
     let s = '';
-    if (!v || v === true) continue; // falsey values or literal `true` -> drop
+    if (!v || v === true) continue; // falsy values and a literal `true` add nothing
     else if (typeof v === 'object') {
-      if (Array.isArray(v)) s = cx(...v); // process and flatten any arrays
-      else for (const k in v) if (v[k]) s += (s ? ' ' : '') + k; // handle the object-form { active: true }
+      if (Array.isArray(v)) s = cx(...v); // arrays flatten
+      else for (const k in v) if (v[k]) s += (s ? ' ' : '') + k; // the object form, { active: true }
     } else s = String(v); // strings go straight in
     if (s) out += (out ? ' ' : '') + s;
   }
@@ -30,22 +30,22 @@ export const cx = (...values: ClassValue[]): string => {
 /** A `style="…"` value as an object. Keys are written out as given: `'--brand'`, `'background-color'`. No camelCase conversion. */
 export type StyleValue = Record<string, string | number | null | undefined | false>;
 
-/** The object form of `aria` and `data` - f.ex `aria: { expanded: open }` becomes `aria-expanded="…"`. */
+/** The object form of `aria` and `data`: `aria: { expanded: open }` becomes `aria-expanded="…"`. */
 export type AttrGroup = Record<string, string | number | bigint | boolean | null | undefined>;
 
 /**
  * A value for `attrs()`. `true` gives a bare attribute (`disabled`), and `false`, `null` and `undefined` omit it.
  *
- * The exceptions are `aria-*`, `draggable`, `spellcheck` and `contenteditable`, where booleans need to be "true" and "false".
+ * The exceptions are `aria-*`, `draggable`, `spellcheck` and `contenteditable`, where booleans render as "true" and "false".
  *
  * `class` takes what `cx()` takes, `style` an object, `aria` and `data` a group.
  */
 export type AttrValue = string | number | bigint | boolean | null | undefined | ClassValue[] | StyleValue | AttrGroup;
 
-// Attributes where `false` must be written out, because "absent" means something else than "false".
+// Attributes where `false` is written out, because absent means something other than "false".
 const TRI = /^(?:aria-|draggable$|spellcheck$|contenteditable$)/i;
 
-// Process { color: 'red', '--x': 1 } into "color:red;--x:1;"
+// Turns { color: 'red', '--x': 1 } into "color:red;--x:1;"
 const style = (v: StyleValue): string => {
   let out = '';
   for (const k in v) {
@@ -58,7 +58,7 @@ const style = (v: StyleValue): string => {
 /*
  * Renders one attribute onto `out` and returns the new `out`. Called again for each key of an `aria` or `data` group.
  *
- * At module scope to avoid creating a fresh allocation on every call of `createAttrs`.
+ * At module scope so it is not allocated again on every call of `createAttrs`.
  */
 const one = (out: string, name: string, v: AttrValue, schemes: ReadonlySet<string>): string => {
   if (v == null) return out;
@@ -68,7 +68,7 @@ const one = (out: string, name: string, v: AttrValue, schemes: ReadonlySet<strin
     if (v === false && !tri) return out;
     out += out ? ' ' : '';
     if (!tri) return out + name; // a bare attribute, like `disabled`
-    // A tri attribute's value is the word `true` or `false`: nothing to escape, and a
+    // A tri attribute's value is the word `true` or `false`, with nothing to escape. A
     // name matching TRI is never an `on*` handler and never holds a URL, so the checks
     // in attrValue have nothing to do here.
     return `${out}${name}="${v}"`;

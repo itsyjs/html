@@ -14,8 +14,8 @@ const WHY = 'ghtml escapes to numeric entities (&#38;) and escapes `=` as well';
 
 export default {
   name: 'ghtml',
-  // ghtml escapes to numeric entities and escapes `=` as well, so any value holding one of
-  // those comes out differently. That is every case here.
+  // ghtml escapes to numeric entities and also escapes `=`, so any value holding one of
+  // those comes out differently. Every case here has one.
   differs: { link: WHY, card: WHY, page: WHY, table: WHY, escape: WHY },
   link: () => String(Link(one)),
   card: () =>

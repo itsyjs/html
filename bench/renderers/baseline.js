@@ -2,13 +2,13 @@ import { attrsOf, few, hostile, items, nav, one } from '../fixtures.js';
 
 // Two reference points, not libraries.
 //
-// `escaped` is what you would write by hand: the same escaping, no scanner, no
-// context, no URL guard. It is the fastest a correct hand-rolled renderer gets.
-// `raw` skips escaping entirely — the speed of light, and a hole in your site.
+// `escaped` is the hand-written version: the same escaping, but no scanner, no
+// context and no URL guard. It is the fastest a correct hand-rolled renderer gets.
+// `raw` skips escaping entirely: the speed of light, and a hole in the site.
 
-// The same scan-and-slice escaper @itsy/html and hono use. A `replace` with a
-// callback is what most people write by hand and is roughly half the speed, but
-// this row is meant to be the floor for a correct renderer, not a typical one.
+// The same scan-and-slice escaper @itsy/html and hono use. Most hand-written code
+// uses `replace` with a callback, which runs at about half the speed. But this row
+// is the floor for a correct renderer, not a typical one.
 const FIRST = /[&<>"']/;
 const esc = (s) => {
   let at = s.search(FIRST);
@@ -32,12 +32,12 @@ const esc = (s) => {
 };
 
 // Attributes from an object, written by hand: no scanner, no URL guard, and the tri-state
-// rule spelled out rather than derived from a set. This is the floor the `attrs` case is
-// measured against — the only helper in this file that @itsy/html's attrs() has to beat.
+// rule spelled out rather than derived from a set. This is the floor for the `attrs` case,
+// and the only helper in this file that @itsy/html's attrs() has to beat.
 //
-// It handles exactly what attrsOf() produces, not the general rule: `aria-*` only, where
-// attrs() also treats draggable, spellcheck and contenteditable as tri-state. Widen the
-// fixture and this needs widening with it, which verify() will say so loudly.
+// It handles exactly what attrsOf() produces, not the general rule: `aria-*` only, while
+// attrs() also treats draggable, spellcheck and contenteditable as tri-state. A wider
+// fixture needs a wider helper here, and verify() fails loudly until it has one.
 const TRI = /^aria-/;
 const buildAttrs = (o) => {
   let out = '';
@@ -80,7 +80,7 @@ const RawGroup = (g) =>
 
 export const raw = {
   name: 'no escaping (speed of light)',
-  unsafe: true, // the point of this one: it is here to show what escaping costs
+  unsafe: true, // here to show what escaping costs
   link: () => RawLink(one),
   card: () =>
     `<article class="card ${one.featured ? 'is-featured' : ''}" data-id="${one.id}" title="${one.name}"><h3>${one.name}</h3><p>${one.price.toFixed(2)}</p></article>`,
