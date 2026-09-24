@@ -1,6 +1,7 @@
 import { suite, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { inspect } from 'node:util';
 import type * as Lib from '#index';
 import type * as Check from '#check';
 import type * as Frame from '#frame';
@@ -45,6 +46,15 @@ suite('built output', () => {
     assert.equal(String(dev.html`<p>${prod.raw('<b>')}</p>`), '<p><b></p>');
     // …and a URL from the other copy is still scheme-checked by this one.
     assert.equal(String(prod.html`<a href="${dev.raw('javascript:x')}"></a>`), '<a href="about:blank#blocked"></a>');
+  });
+  test('Html keeps its name through the minifier', async () => {
+    // Minified, the class is `var n=class{…}`. console.log and Node's "Received an instance of"
+    // errors read the name, so without `static name` they would say `n`.
+    const prod = await load('index.js');
+    const dev = await load('index.dev.js');
+    assert.equal(prod.html`<b></b>`.constructor.name, 'Html');
+    assert.equal(dev.html`<b></b>`.constructor.name, 'Html');
+    assert.equal(inspect(prod.html`<b></b>`), 'Html {}');
   });
   test('prod says E<code>, dev spells it out; both carry the code', async () => {
     const prod = await load('index.js');

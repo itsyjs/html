@@ -51,6 +51,7 @@ suite('Html', () => {
     assert.equal(h + '', '<b>x</b>');
     assert.equal(JSON.stringify({ h }), '{"h":"<b>x</b>"}');
     assert.equal(h.markup, '<b>x</b>'); // no coercion, and typed as a string
+    assert.equal(h.render(), '<b>x</b>'); // the same, named for the last step
   });
   test('raw() with a non-string is still Html: the brand field always holds a string', () => {
     const n = raw(123 as never);

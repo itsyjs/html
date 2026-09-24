@@ -21,7 +21,7 @@ those for exact types. This file is the task-oriented map.
 import { html, attrs, raw } from '@itsy/html';
 import { join, wrap } from '@itsy/html/util';
 
-html`<a href="${url}" class="lenke ${active && 'aktiv'}">${label}</a>`; // → Html (a wrapper: `.markup` or `String()` gives the string)
+html`<a href="${url}" class="lenke ${active && 'aktiv'}">${label}</a>`; // → Html (a wrapper: `.markup` gives the string; `.render()` is the same)
 html`<ul>${items.map((i) => html`<li>${i.name}</li>`)}</ul>`; // arrays / iterables flatten
 html`<input ${attrs({ type: 'text', disabled: busy, class: ['a', cond && 'b'] })}>`; // dynamic attributes
 html`<button ${attrs({ aria: { expanded: open, controls: id }, data: { kategori } })}>`; // aria-expanded="false" data-kategori="…"
@@ -30,7 +30,7 @@ html`<script>${raw(JSON.stringify(state).replace(/</g, '\\u003c'))}</script>`; /
 html`<p>${join(tags.map(Tag), ', ')}</p>`; // util: joiner between items; the template escapes it
 html`<ul>${wrap(names, 'li', { class: 'x' })}</ul>`; // util: each item in a tag; bad tag name is code 17, text in <script>/<style> is 6
 raw(trustedMarkup); // the one escape hatch
-String(view) / el.innerHTML = view / res.send(String(view)); // Html coerces everywhere
+res.send(view.markup); // once, where the page leaves the library. Prefer `.markup` to String(view): TypeScript checks it
 ```
 
 ## Rules the scanner enforces (once per call site; violations throw `HtmlError` at first render)
@@ -51,6 +51,8 @@ String(view) / el.innerHTML = view / res.send(String(view)); // Html coerces eve
 ## Gotchas
 
 - `${flag}` renders nothing; `<input ${flag}>` is an error — write `attrs({ disabled: flag })`.
+- Nest the `Html`, never its `.markup`: `${view.markup}` in a template is a string, so it is escaped a second time. `check()` and `frame()` take `Html` too.
+- Express `res.send`, Fastify `reply.send` and Koa `ctx.body` send a bare `Html` as JSON (Fastify 500s once the type is `text/html`); `node:http` `res.end` throws. All four type the body as `any`, so only `.markup` prevents it.
 - A template that is only `<div>` throws 9 in dev, and one that is only `<my-el />` throws 11: fragments must balance, and only void elements self-close. `raw('<div>')` is the deliberate-fragment hatch.
 - `src/audit.ts` and `src/a11y.ts` are dev-only and tree-shaken out of prod. `src/audit.ts` never influences escaping; it only adds errors, so don't fold it into the scanner in `html.ts`. `src/a11y.ts` is reached only from `check()`'s `__DEV__` branch, and `test/built/output.test.ts` scans the prod bundles to prove it never arrives there.
 - `attrs({ 'aria-expanded': open })` renders `aria-expanded="false"` when closed; `attrs({ 'data-open': open })` renders nothing. Different attributes, different rules, on purpose.

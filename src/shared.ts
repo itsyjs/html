@@ -45,12 +45,23 @@ export class Html {
   // A `#private` field brands the type, so TypeScript never takes a string for trusted markup.
   readonly #markup: string;
 
+  // The minifier names the class after its one-letter variable, so without this the prod build
+  // says `n` in `console.log` and in Node's "Received an instance of" errors. 9 bytes brotli;
+  // the bundler's `keepNames` does the same for every function, at 247.
+  static name = 'Html';
+
   constructor(markup: string) {
     // `instanceof` reads this through BRAND and expects a string. Only the types stop `raw(5)`.
     this.#markup = typeof markup === 'string' ? markup : String(markup);
   }
 
+  /** The markup as a string. Read it where the page leaves the library; nest the `Html` itself. */
   get markup(): string {
+    return this.#markup;
+  }
+
+  /** The same as `.markup`, for those who read it as the last step: build with `html`, then render once. */
+  render(): string {
     return this.#markup;
   }
 

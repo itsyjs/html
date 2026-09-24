@@ -42,11 +42,11 @@ Card({ title: 'Hello', flat: true, slot: html`<h2>World</h2>` });
 
 ## Rendering it
 
-`Html` extends `String`, so anything that takes a string accepts it.
+`Html` is a wrapper; `.markup` is the string. Take it once, where the page leaves the library — [more on `Html`](/api/html#html-class).
 
 ```ts
-el.innerHTML = String(Card(props)); // browser
-response.body = String(Card(props)); // server
+el.innerHTML = Card(props).markup; // browser
+response.body = Card(props).markup; // server
 ```
 
 ## Available builds

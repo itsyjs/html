@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 const Item = (label: string) => html`<li>${label}</li>`;
 
 test('escapes the label', () => {
-  assert.equal(String(Item('a < b')), '<li>a &lt; b</li>');
+  assert.equal(Item('a < b').markup, '<li>a &lt; b</li>');
 });
 ```
 
@@ -73,7 +73,7 @@ viewed.
 // .storybook/preview.ts
 export const decorators = [
   (story) => {
-    const markup = String(story());
+    const markup = story().markup;
     for (const p of check(markup)) console.warn(`[${'rule' in p ? p.rule : `html ${p.code}`}] ${p.message}`, p.near);
     return markup;
   },
@@ -82,10 +82,10 @@ export const decorators = [
 
 ## Snapshots
 
-Snapshot `String(view)`, never the `Html` itself — a serializer will otherwise record an object.
+Snapshot `view.markup`, never the `Html` itself — a serializer will otherwise record an object.
 
 ```ts
-expect(String(Page(data))).toMatchSnapshot(); // or the runner's equivalent
+expect(Page(data).markup).toMatchSnapshot(); // or the runner's equivalent
 ```
 
 Whitespace in the output is stable: [static markup collapses to single

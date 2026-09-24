@@ -13,7 +13,7 @@ const app = new Hono();
 
 app.get('/orders', (c) => {
   const view = frame({ lang: 'en', title: 'Orders', content: Orders(data) });
-  return c.html(String(view));
+  return c.html(view.markup);
 });
 ```
 
@@ -25,7 +25,7 @@ const app = Fastify();
 
 app.get('/orders', (_req, reply) => {
   const view = frame({ lang: 'en', title: 'Orders', content: Orders(data) });
-  reply.type('text/html; charset=utf-8').send(String(view));
+  reply.type('text/html; charset=utf-8').send(view.markup);
 });
 ```
 
@@ -36,16 +36,15 @@ import { frame } from '@itsy/html/frame';
 createServer((_req, res) => {
   const view = frame({ lang: 'en', title: 'Orders', content: Orders(data) });
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-  res.end(String(view));
+  res.end(view.markup);
 }).listen(3000);
 ```
 
 :::
 
-::: warning Prefer using `String(view)`
-`Html` is an object. Frameworks often serialize whatever is returned - so the `Html` object might be used instead of stringifying.
-
-Plus it will make Typescript happy, and y'all love Typescript.
+::: warning Send `view.markup`
+`Html` is an object. Express, Fastify and Koa send an object as JSON, and their types accept it, so
+nothing flags it before a request does. [What each one does](/api/html#handing-it-over).
 :::
 
 ## The page is one string
@@ -65,7 +64,7 @@ rather than trying to split a template.
 app.get('/orders', (c) => {
   const nonce = crypto.randomUUID();
   c.header('content-security-policy', `script-src 'nonce-${nonce}'; object-src 'none'`);
-  return c.html(String(frame({ lang: 'en', title: 'Orders', content, scripts, nonce })));
+  return c.html(frame({ lang: 'en', title: 'Orders', content, scripts, nonce }).markup);
 });
 ```
 

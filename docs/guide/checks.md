@@ -2,6 +2,23 @@
 
 This page details how to use checks that are included for accessibility, security, and avoiding typos that would cause unintended HTML.
 
+## Setup
+
+`html` checks each template itself; `check()` is the one call to add, on the finished page.
+
+```ts
+import { check } from '@itsy/html/check';
+
+app.get('/', (req, res) => {
+  const view = Page(data); // a broken template throws HtmlError here
+
+  // the whole page: ids, blocked URLs, accessibility. [] in production
+  for (const p of check(view)) console.warn('rule' in p ? p.rule : `E${p.code}`, p.message, p.near);
+
+  res.send(view.markup);
+});
+```
+
 | check                        | fires                                                    | build                                | setup                         |
 | ---------------------------- | -------------------------------------------------------- | ------------------------------------ | ----------------------------- |
 | renderer refusals, codes 2-7 | first render of a template, throws `HtmlError`           | both                                 | none                          |

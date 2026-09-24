@@ -3,7 +3,7 @@
 ```ts
 import { Results } from './results.ts';
 
-document.querySelector('#results').innerHTML = String(Results(items));
+document.querySelector('#results').innerHTML = Results(items).markup;
 ```
 
 ## Behaviour goes on with a listener

@@ -23,8 +23,8 @@ const Menu = ({ groups }: MenuData) => html`
     )}
   </nav>`;
 
-res.send(String(Menu(data))); // server
-el.innerHTML = Menu(data); // client: same function, same string, no hydration
+res.send(Menu(data).markup); // server
+el.innerHTML = Menu(data).markup; // client: same function, same string, no hydration
 ```
 
 ## Why
@@ -67,8 +67,8 @@ server and in a browser.
 
 > [!WARNING]
 > `Html` is an object, not a primitive. `typeof` reports `'object'`, an empty one is truthy, and
-> any framework that serializes objects will JSON-encode it rather than send the markup. Call
-> `String(view)` at that boundary.
+> any framework that serializes objects will JSON-encode it rather than send the markup. Use
+> `view.markup` at that boundary.
 
 > [!WARNING]
 > Prettier and oxfmt reformat the HTML inside `html` templates by default. `<br>` becomes `<br />`,
