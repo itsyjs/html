@@ -4,8 +4,6 @@ This page details how to use checks that are included for accessibility, securit
 
 ## Setup
 
-`html` checks each template itself; `check()` is the one call to add, on the finished page.
-
 ```ts
 import { check } from '@itsy/html/check';
 
@@ -19,26 +17,32 @@ app.get('/', (req, res) => {
 });
 ```
 
-| check                        | fires                                                    | build                                | setup                         |
-| ---------------------------- | -------------------------------------------------------- | ------------------------------------ | ----------------------------- |
-| renderer refusals, codes 2-7 | first render of a template, throws `HtmlError`           | both                                 | none                          |
-| markup check, codes 8–14     | first render of a template, throws `HtmlError`           | development only                     | resolve the development build |
-| `check()`, codes 8–16 and 19 | when called on a rendered page, a `Problem` for each     | development only, `[]` in production | `@itsy/html/check`            |
-| accessibility rules          | inside `check()`, a `Finding` for each, in the same list | development only, on by default      | none                          |
+::: details What checks are run where
+
+| run by          | checks                                                                                                                                                                                                                                    | result               | build                                |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ------------------------------------ |
+| `html`          | [3](/reference/errors#e3), [5](/reference/errors#e5), [6](/reference/errors#e6), [7](/reference/errors#e7): an `on*` attribute, an unquoted attribute value, a plain string inside a tag or `<script>`, an object or `Promise` as a value | throws `HtmlError`   | both                                 |
+| `html`          | [8–14](/reference/errors#e8): markup the browser would repair                                                                                                                                                                             | throws `HtmlError`   | development only                     |
+| `attrs`         | [2](/reference/errors#e2), [3](/reference/errors#e3): an object for a plain attribute, an `on*` name                                                                                                                                      | throws `HtmlError`   | both                                 |
+| `frame`, `wrap` | [6](/reference/errors#e6), [17](/reference/errors#e17), [18](/reference/errors#e18): a `<script>` body that is not `Html`, an invalid tag name, a body on a void element                                                                  | throws `HtmlError`   | both                                 |
+| `check()`       | [8–16, 19](/reference/errors#e8): the markup check across templates, ids, blocked URLs                                                                                                                                                    | a `Problem` for each | development only, `[]` in production |
+| `check()`       | [accessibility rules](/api/check#accessibility), on by default                                                                                                                                                                            | a `Finding` for each | development only, `[]` in production |
 
 `HtmlError.code` is the same in both builds; production's message is `E` plus the code. Bundlers pick the development build with the `development` condition — [bundlers and editors](/recipes/tooling).
 
+:::
+
 ## Markup check
 
-Browsers repair broken HTML silently. These throw instead. It is not HTML validation — html-validate or a similar linter is needed for that.
+Browsers repair broken HTML silently, which can have unintended effects.
 
-Codes [8 to 14](/reference/errors#e8): a tag never closed, an end tag that closes the wrong thing, `/>` on an element that does not self-close, nesting the browser rewrites, the same attribute twice.
+Codes [8 to 14](/reference/errors#e8) call out these errors - for example, if a tag isn't closed, a closing mark (`/>`) on an element that does not self-close, etc.
 
 ```ts run
 html`<div><p>x</p>`;
 ```
 
-A tag left open on purpose, to close in another template, goes through `raw()`.
+If a tag needs to be left open so it can be closed elsewhere - use `raw`.
 
 ```ts run
 html`${raw('<main class="page">')}<h1>${'title'}</h1>`;
@@ -56,18 +60,10 @@ Pass `{ ids: false }` when the markup is a partial-fragment, e.g. a `for` or `ar
 
 ## Accessibility
 
-Advice, not errors, and on by default: a `Finding` carries a rule name instead of a code, and an
-empty list means these rules found nothing, not that the page is accessible.
-[The rules](/api/check#accessibility).
+[See more details about what rules are available here](/api/check#accessibility).
 
 ```ts run
 check('<img src="cat.jpg"><button><svg></svg></button><a href="/skip" aria-hidden="true">Skip</a>');
-```
-
-Quiet when unsure: `alt=""`, `role="presentation"`, `hidden` and custom elements all silence the rule around them.
-
-```ts run
-check('<img src="c.jpg" alt=""><div hidden><button></button></div><label>Email <my-input></my-input></label>');
 ```
 
 `a11y: { without: [...] }` turns a rule off for a whole codebase, and `a11y: false` turns the lot
