@@ -44,7 +44,7 @@ A template tag like `html`, without the escaping, for templates whose values are
 const Nav = (links: Link[]) => trusted`<nav>${links.map((l) => trusted`<a href="${l.href}">${l.label}</a>`)}</nav>`;
 ```
 
-On clean data it is 1.5 to 2.8 times faster than `html`.
+On clean data it is [1.5 to 2.5 times faster](/reference/benchmarks#nothing-to-escape) than `html`.
 
 ## raw
 

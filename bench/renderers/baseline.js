@@ -1,4 +1,4 @@
-import { attrsOf, few, hostile, items, nav, one } from '../fixtures.js';
+import { attrsOf, clean, few, hostile, items, nav, one } from '../fixtures.js';
 
 // Two reference points, not libraries.
 //
@@ -60,6 +60,15 @@ const Row = (i) =>
 const Group = (g) =>
   `<section><h2>${esc(g.title)}</h2><ul>${g.links.map((l) => `<li>${Link(l)}</li>`).join('')}</ul></section>`;
 
+// The clean cases take their data as arguments, as renderers/itsy.js writes them for `html`
+// and `trusted`, so the four in that table run the same shape of code.
+const Card = (i) =>
+  `<article class="card ${i.featured ? 'is-featured' : ''}" data-id="${i.id}" title="${esc(i.name)}"><h3>${esc(i.name)}</h3><p>${i.price.toFixed(2)}</p></article>`;
+const Page = (n, f) =>
+  `<main><h1>Catalogue</h1>${n.map(Group).join('')}<ol>${f.map((i) => `<li>${Link(i)}</li>`).join('')}</ol></main>`;
+const Table = (rows) => `<table><tbody>${rows.map(Row).join('')}</tbody></table>`;
+const Text = (s) => `<p>${esc(s)}</p>`;
+
 export const escaped = {
   name: 'hand-written (escape + concat)',
   link: () => Link(one),
@@ -70,6 +79,11 @@ export const escaped = {
   page: () =>
     `<main><h1>Catalogue</h1>${nav.map(Group).join('')}<ol>${few.map((i) => `<li>${Link(i)}</li>`).join('')}</ol></main>`,
   attrs: () => `<ul>${few.map((i) => `<li><a${buildAttrs(attrsOf(i))}>${esc(i.name)}</a></li>`).join('')}</ul>`,
+  cleanLink: () => Link(clean().one),
+  cleanCard: () => Card(clean().one),
+  cleanPage: () => Page(clean().nav, clean().few),
+  cleanTable: () => Table(clean().items),
+  cleanText: () => Text(clean().text),
 };
 
 const RawLink = (i) => `<a href="${i.href}" class="link ${i.featured ? 'is-featured' : ''}">${i.name}</a>`;
@@ -77,6 +91,12 @@ const RawRow = (i) =>
   `<tr><td>${i.id}</td><td>${RawLink(i)}</td><td>${i.price.toFixed(2)}</td><td>${i.featured ? 'yes' : 'no'}</td></tr>`;
 const RawGroup = (g) =>
   `<section><h2>${g.title}</h2><ul>${g.links.map((l) => `<li>${RawLink(l)}</li>`).join('')}</ul></section>`;
+const RawCard = (i) =>
+  `<article class="card ${i.featured ? 'is-featured' : ''}" data-id="${i.id}" title="${i.name}"><h3>${i.name}</h3><p>${i.price.toFixed(2)}</p></article>`;
+const RawPage = (n, f) =>
+  `<main><h1>Catalogue</h1>${n.map(RawGroup).join('')}<ol>${f.map((i) => `<li>${RawLink(i)}</li>`).join('')}</ol></main>`;
+const RawTable = (rows) => `<table><tbody>${rows.map(RawRow).join('')}</tbody></table>`;
+const RawText = (s) => `<p>${s}</p>`;
 
 export const raw = {
   name: 'no escaping (speed of light)',
@@ -88,4 +108,9 @@ export const raw = {
   escape: () => `<p>${hostile}</p>`,
   page: () =>
     `<main><h1>Catalogue</h1>${nav.map(RawGroup).join('')}<ol>${few.map((i) => `<li>${RawLink(i)}</li>`).join('')}</ol></main>`,
+  cleanLink: () => RawLink(clean().one),
+  cleanCard: () => RawCard(clean().one),
+  cleanPage: () => RawPage(clean().nav, clean().few),
+  cleanTable: () => RawTable(clean().items),
+  cleanText: () => RawText(clean().text),
 };

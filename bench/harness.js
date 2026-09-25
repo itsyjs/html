@@ -18,19 +18,21 @@
 // including size.js, whether or not it measures lit.
 
 import { do_not_optimize, measure } from 'mitata';
-import { CASE_KEYS, MIN_CPU_TIME } from './spec.js';
+import { CASE_KEYS, CLEAN_KEYS, MIN_CPU_TIME } from './spec.js';
 import { escaped, raw } from './renderers/baseline.js';
 import ghtml from './renderers/ghtml.js';
 import hono from './renderers/hono.js';
-import itsy from './renderers/itsy.js';
+import itsy, { trusted } from './renderers/itsy.js';
 import lit from './renderers/lit.js';
 import preact from './renderers/preact.js';
 
 export const contenders = [itsy, hono, ghtml, preact, lit, escaped, raw];
 export const baseline = itsy;
 
-export { ATTR_CASES, ATTR_KEYS, CASES, CASE_KEYS } from './spec.js';
+export { ATTR_CASES, ATTR_KEYS, CASES, CASE_KEYS, CLEAN_CASES, CLEAN_KEYS } from './spec.js';
 export const attrContenders = [itsy, preact, escaped];
+/** The clean table's four. `trusted` is in no other table: see CLEAN_CASES in spec.js. */
+export const cleanContenders = [itsy, trusted, escaped, raw];
 
 /**
  * Prove each renderer really rendered every row, really escaped, and still matches
@@ -67,6 +69,18 @@ export const verify = () => {
   const wantAttrs = baseline.attrs();
   for (const r of attrContenders) {
     if (r.attrs() !== wantAttrs) throw new Error(`${r.name}/attrs: output does not match ${baseline.name}`);
+  }
+
+  // Nor do the clean cases. With nothing to escape, the escaper and no escaper at all must agree
+  // too. That is what proves the data clean, and so fit for `trusted`.
+  if ((cleanContenders[0].cleanTable().match(/<tr[ >]/g) ?? []).length !== 1000) {
+    throw new Error('cleanTable: did not render 1000 rows');
+  }
+  for (const k of CLEAN_KEYS) {
+    const want = baseline[k]();
+    for (const r of cleanContenders) {
+      if (r[k]() !== want) throw new Error(`${r.name}/${k}: output does not match ${baseline.name}`);
+    }
   }
 };
 

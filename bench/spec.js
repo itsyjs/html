@@ -28,9 +28,31 @@ export const CASE_KEYS = Object.keys(CASES);
 export const ATTR_CASES = { attrs: 'attributes from an object' };
 export const ATTR_KEYS = Object.keys(ATTR_CASES);
 
-/** Every contender, in table order: display name, module, and the export to take from it. */
+/**
+ * The shared cases again, over data with nothing to escape (`clean` in fixtures.js), with plain
+ * text in place of the escape-heavy string.
+ *
+ * Kept apart for `trusted`. It is only for data like this, since its development build throws on
+ * anything `html` would escape. On the shared data it would be a second no-escaping row. So it
+ * gets its own table, beside `html` and the two reference points, and all four must write the
+ * same bytes. That also proves the data needed no escaping.
+ */
+export const CLEAN_CASES = {
+  cleanLink: 'one <a>',
+  cleanCard: 'one element',
+  cleanPage: 'nested page',
+  cleanTable: '1000 rows',
+  cleanText: 'plain text',
+};
+export const CLEAN_KEYS = Object.keys(CLEAN_CASES);
+
+/**
+ * Every contender, in table order: display name, module, and the export to take from it.
+ * `shared: false` marks one that skips `CASES`.
+ */
 export const RENDERERS = [
   { name: '@itsy/html', module: './renderers/itsy.js', export: 'default' },
+  { name: '@itsy/html trusted', module: './renderers/itsy.js', export: 'trusted', shared: false },
   { name: 'hono/html', module: './renderers/hono.js', export: 'default' },
   { name: 'ghtml', module: './renderers/ghtml.js', export: 'default' },
   { name: 'htm + preact-render-to-string', module: './renderers/preact.js', export: 'default' },
@@ -41,6 +63,14 @@ export const RENDERERS = [
 
 /** The three that can build attributes from an object. */
 export const ATTR_RENDERERS = ['@itsy/html', 'htm + preact-render-to-string', 'hand-written (escape + concat)'];
+
+/** The four in the clean table: `html`, `trusted`, and the two reference points. */
+export const CLEAN_RENDERERS = [
+  '@itsy/html',
+  '@itsy/html trusted',
+  'hand-written (escape + concat)',
+  'no escaping (speed of light)',
+];
 
 /** How long mitata spends on each function. Its own default is 642 ms, more than this needs. */
 export const MIN_CPU_TIME = 250e6;

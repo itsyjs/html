@@ -38,7 +38,7 @@ export const passthrough = (strings: TemplateStringsArray, ...values: Renderable
 };
 
 /**
- * `html` without the escaping, for templates that never take user content. It is 1.5–2.8x faster on clean data.
+ * `html` without the escaping, for templates that never take user content. It is 1.5–2.5x as fast on clean data.
  *
  * Production writes every value as it is: no escaping, no URL guard, and no code 6 check. It still
  * scans each template once, so codes 3 and 5 hold. The dev build is `html` with one more rule. A

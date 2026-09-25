@@ -25,6 +25,37 @@ export const nav = [
 ];
 
 /**
+ * The same shapes with nothing to escape, for the clean cases: names without `&` or `"`, links
+ * without `&`, and plain text as long as `hostile`. `trusted` only takes data like this.
+ *
+ * Built on first use, so only the processes that run the clean cases hold it. Allocating these
+ * products at import, in a process that never rendered them, moved @itsy/html's escape-heavy
+ * case from 2.43 µs to 1.92 µs. A thousand unrelated arrays did not, and neither did the text.
+ */
+let built;
+export const clean = () => (built ??= cleanData());
+const cleanData = () => {
+  const items = Array.from({ length: 1000 }, (_, i) => ({
+    id: i,
+    name: `Widget ${i}`,
+    href: `/items/${i}?page=1`,
+    price: ((i * 7) % 499) + 0.99,
+    featured: i % 7 === 0,
+  }));
+  const few = items.slice(0, 10);
+  return {
+    items,
+    few,
+    one: items[0],
+    nav: [
+      { title: 'Catalogue', links: few.slice(0, 5) },
+      { title: 'Offers', links: few.slice(5, 10) },
+    ],
+    text: 'Nothing in this line needs any escape '.repeat(20),
+  };
+};
+
+/**
  * The attribute set for the `attrs` case: the object each renderer turns into attributes
  * with whatever mechanism it has.
  *

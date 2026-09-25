@@ -32,9 +32,9 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { do_not_optimize, measure } from 'mitata';
-import { ATTR_CASES, ATTR_KEYS, CASES, CASE_KEYS } from './spec.js';
-import { make } from './renderers/itsy.js';
-import current from './renderers/itsy.js';
+import { ATTR_CASES, ATTR_KEYS, CASES, CASE_KEYS, CLEAN_CASES, CLEAN_KEYS } from './spec.js';
+import { make, makeTrusted } from './renderers/itsy.js';
+import current, { trusted as currentTrusted } from './renderers/itsy.js';
 
 const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const rev = process.argv[2] ?? 'main';
@@ -116,13 +116,20 @@ try {
   const out = buildBaseline(tmp);
   const exports = { ...(await import(out.index)), ...(await import(out.create)) };
   const before = make({ html: exports.html, attrs: exports.attrs, createHtml: exports.createHtml });
+  // `trusted` is newer than some revisions worth comparing against. Without it, its rows are left out.
+  const beforeTrusted = exports.trusted && makeTrusted({ trusted: exports.trusted });
+  if (!beforeTrusted) process.stderr.write(`${rev} has no trusted, so its rows are left out\n`);
 
-  // Everything worth diffing, flattened: the shared cases, then the two @itsy/html-only
-  // groups. `cold` is the template scan. `probes` are the attrs paths the shared case
-  // cannot reach, because it must stay byte-identical to preact.
+  // Everything worth diffing, flattened: the shared cases, the clean ones for `html` and for
+  // `trusted`, then the two @itsy/html-only groups. `cold` is the template scan. `probes` are
+  // the attrs paths the shared case cannot reach, because it must stay byte-identical to preact.
   const subjects = [
     ...CASE_KEYS.map((k) => ({ label: CASES[k], a: current[k], b: before[k] })),
     ...ATTR_KEYS.map((k) => ({ label: ATTR_CASES[k], a: current[k], b: before[k] })),
+    ...CLEAN_KEYS.map((k) => ({ label: `clean: ${CLEAN_CASES[k]}`, a: current[k], b: before[k] })),
+    ...(beforeTrusted
+      ? CLEAN_KEYS.map((k) => ({ label: `trusted: ${CLEAN_CASES[k]}`, a: currentTrusted[k], b: beforeTrusted[k] }))
+      : []),
     { label: 'first render of a call site', a: current.cold, b: before.cold },
     ...Object.keys(current.probes).map((n) => ({ label: n, a: current.probes[n], b: before.probes[n] })),
   ];

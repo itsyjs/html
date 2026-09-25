@@ -79,10 +79,11 @@ bogus row slipped through per self-comparison — things like `-2.1% (-3.7 … -
 near edge is nowhere near the floor. Neither rule costs any real signal: the smallest genuine
 change measured here, the URL-guard probe, reads +6.7% (5.7 … 8.4).
 
-Alongside the shared cases it measures two `@itsy/html`-only groups: `cold`, the one-off
-template scan, and `probes` from `renderers/itsy.js` — the `attrs()` paths the shared case
-cannot reach, because that one has to stay byte-identical to preact and so gives up `cx()`'s
-array form and any URL the guard would rewrite.
+Alongside the shared cases it measures the clean cases, through `html` and through `trusted`,
+and two `@itsy/html`-only groups: `cold`, the one-off template scan, and `probes` from
+`renderers/itsy.js` — the `attrs()` paths the shared case cannot reach, because that one has to
+stay byte-identical to preact and so gives up `cx()`'s array form and any URL the guard would
+rewrite. A revision without `trusted` has its `trusted` rows left out, with a note saying so.
 
 The baseline is built by `git archive`-ing that revision's `src/` into a temp directory and
 running `tsdown` over it: no worktree, no second install, and the same `__DEV__: false`
@@ -142,17 +143,43 @@ would time our builder and a `raw()` passthrough, not the library — the same r
 That leaves @itsy/html's `attrs()`, htm's `...${props}` spread, and a hand-written builder in
 `baseline.js` as the floor.
 
+### Nothing to escape
+
+The fourth and fifth tables are `trusted`'s, and it is in no other. It writes values as they
+are, so on the shared data, whose names hold `&` and `"`, it would only be a second no-escaping
+row. It is also not allowed that data: its development build throws code 20 on the first name.
+
+So the clean cases (`CLEAN_CASES` in `spec.js`) render the same templates over `clean` from
+`fixtures.js`: the products with nothing to escape, and plain text as long as the escape-heavy
+string. `html` and the two reference points run them too. `verify()` holds all four to the same
+bytes on every clean case. With nothing to escape, the escaper and no escaper at all must agree,
+and that is what proves the data fit for `trusted`.
+
+Each renderer measures its clean cases in a process of their own, apart from its shared cases,
+and `trusted` apart from `html`. The clean data is built on first use, so only those processes
+hold it, and the shared tables come from processes exactly as they were before this table
+existed.
+
+That second part is measured, not tidiness. Allocating the thousand clean products at import, in a
+process that never rendered one of them, moved @itsy/html's escape-heavy case from 2.43 µs to
+1.92 µs on the same build. A thousand unrelated arrays did not move it, and neither did the clean
+text, and the hand-written escaper did not move at all. It is heap layout, not the library, and
+it is why a new fixture must not be allocated where it is not used.
+
+The clean cases take their data as arguments, `Card(item)`, the same way in all four renderers.
+
 ## The contenders
 
-| renderer                        | what it is                                                            |
-| ------------------------------- | --------------------------------------------------------------------- |
-| `@itsy/html`                    | this library, production build                                         |
-| `hono/html`                     | tagged template, escapes every value, ships inside Hono                |
-| `ghtml`                         | tagged template, escapes every value, zero dependencies                |
-| `htm + preact-render-to-string` | tagged template parsed to preact vnodes, then rendered                 |
-| `lit + @lit-labs/ssr`           | `TemplateResult` built by lit, turned into a string by the ssr package |
-| hand-written                    | a plain template literal with an `esc()` call around each value        |
-| no escaping                     | a plain template literal and nothing else                              |
+| renderer                        | what it is                                                                    |
+| ------------------------------- | ----------------------------------------------------------------------------- |
+| `@itsy/html`                    | this library, production build                                                |
+| `@itsy/html trusted`            | this library's `trusted` tag, production build: no escaping; clean cases only |
+| `hono/html`                     | tagged template, escapes every value, ships inside Hono                       |
+| `ghtml`                         | tagged template, escapes every value, zero dependencies                       |
+| `htm + preact-render-to-string` | tagged template parsed to preact vnodes, then rendered                        |
+| `lit + @lit-labs/ssr`           | `TemplateResult` built by lit, turned into a string by the ssr package        |
+| hand-written                    | a plain template literal with an `esc()` call around each value               |
+| no escaping                     | a plain template literal and nothing else                                     |
 
 The last two are reference points rather than libraries. The hand-written one uses the same
 escaper as @itsy/html, so it shows what is left once the scanner, the context and the URL
