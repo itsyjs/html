@@ -2,14 +2,14 @@
 
 Six entry points. Each is its own module, so a bundler keeps only what is imported.
 
-| import                             | exports                                                     |
-| ---------------------------------- | ----------------------------------------------------------- |
-| `@itsy/html`                       | `html`, `attrs`, `cx`, `raw`, `Html`, `isHtml`, `HtmlError` |
-| [`@itsy/html/attrs`](/api/attrs)   | `attrs`, `cx`, `esc` — no template scanner                  |
-| [`@itsy/html/check`](/api/check)   | `check` — the markup and accessibility checks               |
-| [`@itsy/html/frame`](/api/frame)   | `frame`, `head`, `element`                                  |
-| [`@itsy/html/util`](/api/util)     | `join`, `map`, `range`, `when`, `choose`, `wrap`, `comment` |
-| [`@itsy/html/create`](/api/create) | `createHtml`, `SCHEMES`                                     |
+| import                             | exports                                                                |
+| ---------------------------------- | ---------------------------------------------------------------------- |
+| `@itsy/html`                       | `html`, `trusted`, `attrs`, `cx`, `raw`, `Html`, `isHtml`, `HtmlError` |
+| [`@itsy/html/attrs`](/api/attrs)   | `attrs`, `cx`, `esc` — no template scanner                             |
+| [`@itsy/html/check`](/api/check)   | `check` — the markup and accessibility checks                          |
+| [`@itsy/html/frame`](/api/frame)   | `frame`, `head`, `element`                                             |
+| [`@itsy/html/util`](/api/util)     | `join`, `map`, `range`, `when`, `choose`, `wrap`, `comment`            |
+| [`@itsy/html/create`](/api/create) | `createHtml`, `SCHEMES`                                                |
 
 `@itsy/html/frame` includes the renderer, so a page that uses `frame()` does not need to import
 `@itsy/html` separately. `@itsy/html/util` has no shared state between its helpers, so importing
@@ -27,6 +27,8 @@ Vite does, automatically — get the development build during development and th
 a production build. Node and esbuild need `--conditions=development`. See
 [bundlers and editors](/recipes/tooling).
 
-Both builds render identical output and throw the same `HtmlError.code`. Only the message text and
+Both builds render identical output and throw the same `HtmlError.code`. The one exception is
+[`trusted`](/api/html#trusted): its development build refuses every value on which the two would
+differ, with [code 20](/reference/errors#e20). Only the message text and
 the markup check differ: the development build spells the message out and checks the markup, and
 the production build throws `E` followed by the code.

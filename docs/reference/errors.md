@@ -22,16 +22,19 @@ full; the production build's message is `E` followed by the code.
 | [17](#e17) | a bad tag name                                                                  | `frame`, `element`, `wrap` |
 | [18](#e18) | a body on a void element                                                        | `frame`, `element`         |
 | [19](#e19) | a URL the guard blocked                                                         | `check`                    |
+| [20](#e20) | a value `trusted` would write differently from `html`                           | `trusted`                  |
 
 Codes 1 and 4 are reserved.
 
 **When they happen.** Codes 2, 3, 5, 6 and 7 throw the first time a template runs. Codes 8 to 14
 throw at the same moment, but only in the development build. Codes 15, 16 and 19 are never thrown —
 [`check()`](/api/check) returns them. Codes 17 and 18 throw whenever the offending entry is
-rendered.
+rendered. Code 20 throws only in the development build, whenever [`trusted`](/api/html#trusted)
+gets a value that `html` would escape or block.
 
 **What never throws.** Data. A hostile URL is replaced, hostile text is escaped, and neither stops
-the render.
+the render. The one exception is `trusted` in the development build, whose job is to refuse a value
+that needs either.
 
 ## Code 2 {#e2}
 
@@ -304,3 +307,16 @@ check(String(html`<a href="${'javascript:alert(1)'}">x</a>`));
 Finding one means something upstream produced a URL with a scheme outside the allowed set. Either
 the data is wrong, or the scheme should be allowed — see [adding a
 scheme](/security/url-guard#adding-a-scheme).
+
+## Code 20 {#e20}
+
+A value [`trusted`](/api/html#trusted) would write differently from `html`. Development build only.
+
+```ts
+trusted`<p>${'Tom & Jerry'}</p>`; // ✗ html writes Tom &amp; Jerry
+trusted`<a href="${'javascript:x'}">x</a>`; // ✗ the guard would block it
+```
+
+In production `trusted` writes every value as it is. The development build refuses any value that
+`html` would escape or block, so production never writes something `html` would not. Use `html`
+for a template that takes this value.

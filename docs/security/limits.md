@@ -27,6 +27,26 @@ opens, so it reads what follows as ordinary markup. If the name is `script` or `
 after it is escaped as text, and escaped text in a script still runs. Pick dynamic tag names from a
 fixed list, as in ``raw(`h${level}`)`` with a checked `level`, never from input.
 
+## `trusted` writes values as they are {#trusted}
+
+[`trusted`](/api/html#trusted) gives up escaping for speed. In production, anything a value holds
+reaches the page as it is, and its output nests into `html` without being escaped again. The
+development build throws [code 20](/reference/errors#e20) for any value that needs escaping, but it
+only sees the data that runs through it in development. A field that later starts taking user input
+is not caught.
+
+To keep it out of a codebase, ban the import. ESLint's `no-restricted-imports` does it, and so does
+oxlint's:
+
+```json
+{
+  "no-restricted-imports": [
+    "error",
+    { "paths": [{ "name": "@itsy/html", "importNames": ["trusted"], "message": "Use html." }] }
+  ]
+}
+```
+
 ## Data in a script block
 
 `JSON.stringify` does not escape `<`, and a `</script>` inside the data ends the block early

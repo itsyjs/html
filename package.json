@@ -130,6 +130,12 @@
       "limit": "6 KB"
     },
     {
+      "name": "@itsy/html (with trusted)",
+      "path": "dist/index.js",
+      "import": "{ html, attrs, raw, trusted }",
+      "limit": "2 KB"
+    },
+    {
       "name": "@itsy/html/attrs",
       "path": "dist/attrs.js",
       "import": "{ attrs, cx }",

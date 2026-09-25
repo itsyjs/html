@@ -1,6 +1,6 @@
 import { suite, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { html } from '#index';
+import { html, raw } from '#index';
 
 const s = (x: unknown) => String(x);
 const a = (u: string) => s(html`<a href="${u}">x</a>`);
@@ -34,5 +34,10 @@ suite('URL scheme guard', () => {
   test('srcset is not a URL attribute here: escaped only, never scheme-checked', () => {
     // An image source never runs script, and the several-URL syntax is not worth a parser.
     assert.equal(s(html`<img srcset="${'javascript:x 1x, a,b 2x'}">`), '<img srcset="javascript:x 1x, a,b 2x">');
+  });
+  test('Html outside a URL attribute is never scheme-checked', () => {
+    // Text that starts like a scheme is still text, and `label:` is still script.
+    assert.equal(s(html`<p>${raw('javascript:x')}</p>`), '<p>javascript:x</p>');
+    assert.equal(s(html`<script>${raw('a: for (;;) break a;')}</script>`), '<script>a: for (;;) break a;</script>');
   });
 });

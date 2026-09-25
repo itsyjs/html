@@ -20,7 +20,7 @@ export type Renderable =
   | (() => Renderable);
 
 /** Where one `${…}` sits in the markup. Found once per template, then reused on every render. */
-interface Context {
+export interface Context {
   /** Set when only `Html` is allowed here: inside a tag, `<script>`, `<style>` or a comment. The dev build names the place. */
   only?: string;
   /**
@@ -29,10 +29,12 @@ interface Context {
    * Any other attribute is escaped exactly like text and needs nothing here.
    */
   url?: boolean;
+  /** Dev build only, set for `trusted`: a value that escaping or the URL guard would change throws. */
+  strict?: boolean;
 }
 
 // One scanned template: its static chunks, and the context of each `${…}` between them.
-interface Site {
+export interface Site {
   chunks: string[];
   contexts: Context[];
 }
@@ -40,9 +42,14 @@ interface Site {
 // What the scanner is inside.
 type Mode = 'text' | 'tag' | 'value' | 'script' | 'style' | 'comment';
 
-// Scans a template's static markup once and records the context of every `${…}`.
-// It reads only the fixed strings, never values, so data cannot fool it.
-const analyse = (strings: TemplateStringsArray, collapse: boolean): Site => {
+/**
+ * Scans a template's static markup once and records the context of every `${…}`.
+ * It reads only the fixed strings, never values, so data cannot fool it.
+ *
+ * `trusted` takes its chunks from here too, so the two tags write the same static markup.
+ * @internal
+ */
+export const analyse = (strings: TemplateStringsArray, collapse: boolean): Site => {
   // Use the cooked strings, where `\n` is a newline, as in a normal template literal.
   // A cooked string is `undefined` only after an invalid escape. The raw text is then what was meant.
   const src = Array.from(strings, (s, i) => s ?? strings.raw[i]!);
@@ -58,7 +65,7 @@ const analyse = (strings: TemplateStringsArray, collapse: boolean): Site => {
         // least one newline in it. `\s` cannot be used here: that also takes a no-break space, which is content.
         if (i === 0) c = c.replace(/^[\t\n\f\r ]*\n[\t\n\f\r ]*/, ''); // remove whitespace at the start
         if (i === last) c = c.replace(/[\t\n\f\r ]*\n[\t\n\f\r ]*$/, ''); // remove whitespace at the end
-        return c.replace(/[\t\n\f\r ]*\n[\t\n\f\r ]*/g, ' '); // collapse contained whitespace to a sincle space
+        return c.replace(/[\t\n\f\r ]*\n[\t\n\f\r ]*/g, ' '); // collapse contained whitespace to a single space
       });
 
   const contexts: Context[] = [];
@@ -205,18 +212,40 @@ const analyse = (strings: TemplateStringsArray, collapse: boolean): Site => {
 };
 
 // The escaper for a value that is already Html: nothing to do.
-const trusted = (s: string): string => s;
+const asIs = (s: string): string => s;
+
+// Dev build only, for `trusted`, which writes values out as they are in production: the value had
+// to come through unchanged here, or production would write something `html` never would.
+const unchanged = (out: string, value: string, ctx: Context, i: number): string => {
+  // No `__DEV__ &&` on the message: this whole branch is gone from the production build.
+  if (__DEV__ && ctx.strict && out !== value) {
+    const was = JSON.stringify(value.slice(0, 60));
+    const is = JSON.stringify(out.slice(0, 60));
+    throw new HtmlError(
+      20,
+      `expression ${i}: trusted writes ${was} as it is, where html writes ${is}; use html for a template that takes this value`,
+    );
+  }
+  return out;
+};
 
 // Turns one value into a string, escaped for the context it lands in. `i` is the number of the `${…}`, for error messages.
 const render = (value: Renderable, ctx: Context, schemes: ReadonlySet<string>, i: number): string => {
   // A plain string in ordinary markup is by far the most common case, so it goes first.
   // A string where only Html may go falls through to the code 6 throw below.
-  if (typeof value === 'string' && ctx.only === undefined) return ctx.url ? safeUrl(value, schemes) : esc(value);
+  if (typeof value === 'string' && ctx.only === undefined) {
+    const out = ctx.url ? safeUrl(value, schemes) : esc(value);
+    return __DEV__ ? unchanged(out, value, ctx, i) : out;
+  }
   if (typeof value === 'function') return render(value(), ctx, schemes, i); // call it, render what comes back
   if (value == null || value === false) return '';
   // Already Html: no escaping, but a URL attribute is still scheme-checked.
   // A true Html is read through its brand slot.
-  if (value instanceof Html) return ctx.url ? safeUrl(value[BRAND], schemes, trusted) : value[BRAND];
+  if (value instanceof Html) {
+    if (!ctx.url) return value[BRAND];
+    const out = safeUrl(value[BRAND], schemes, asIs);
+    return __DEV__ ? unchanged(out, value[BRAND], ctx, i) : out;
+  }
   if (typeof value === 'object' && typeof value[Symbol.iterator] === 'function') {
     // A list: render each item in this same context, one after the other.
     let out = '';
@@ -238,15 +267,19 @@ const render = (value: Renderable, ctx: Context, schemes: ReadonlySet<string>, i
  *
  * @param schemes The URL schemes the guard allows, lowercase.
  * @param collapse Whether whitespace with a newline in it becomes one space in the static markup.
+ * @param strict Dev build only: throw code 20 for a value escaping or the URL guard would change. The dev `trusted`.
  * @internal
  */
-export const createTag = (schemes: ReadonlySet<string>, collapse: boolean) => {
+export const createTag = (schemes: ReadonlySet<string>, collapse: boolean, strict?: boolean) => {
   // JavaScript hands a tagged template the same `strings` array object every
   // time that line runs, so it works as a cache key: each template is scanned once.
   const sites = new WeakMap<TemplateStringsArray, Site>();
   return (strings: TemplateStringsArray, ...values: Renderable[]): Html => {
     let site = sites.get(strings);
-    if (!site) sites.set(strings, (site = analyse(strings, collapse)));
+    if (!site) {
+      sites.set(strings, (site = analyse(strings, collapse)));
+      if (__DEV__ && strict) for (const ctx of site.contexts) ctx.strict = true;
+    }
     // Put the markup back together: static chunk, rendered value, static chunk, and so on.
     let out = site.chunks[0]!;
     for (let i = 0; i < values.length; i++) {

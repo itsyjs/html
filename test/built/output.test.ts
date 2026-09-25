@@ -107,6 +107,18 @@ suite('built output', () => {
     assert.equal(view(prod), '<a href="sms:1">&lt;</a>');
     assert.equal(view(dev), view(prod));
   });
+  test('trusted checks in dev and writes values as they are in prod', async () => {
+    const prod = await load('index.js');
+    const dev = await load('index.dev.js');
+    const view = (h: typeof prod.html) => String(h`<a href="${'/x?a=1'}">\n  ${'a'}${[1, null]}${() => 'b'}</a>`);
+    assert.equal(view(prod.trusted), view(prod.html));
+    assert.equal(view(dev.trusted), view(prod.html));
+    // The contract: prod neither escapes nor checks a value. Dev refuses what prod would write differently.
+    assert.equal(String(prod.trusted`<p>${'<b>'}</p>`), '<p><b></p>');
+    assert.equal(String(prod.trusted`<p ${'x'}></p>`), '<p x></p>');
+    assert.throws(() => prod.trusted`<p onclick="${'x'}"></p>`, { code: 3, message: 'E3' });
+    assert.throws(() => dev.trusted`<p>${'<b>'}</p>`, { name: 'HtmlError', code: 20, message: /trusted writes/ });
+  });
   test('the prose and the flag are not in the prod bundle', () => {
     const files = readdirSync(dist).filter((f) => f.endsWith('.js') && !f.endsWith('.dev.js'));
     const src = files.map((f) => readFileSync(new URL(f, dist), 'utf8')).join('\n');
@@ -122,6 +134,7 @@ suite('built output', () => {
       'closes nothing',
       'bad tag name',
       'the URL guard blocked',
+      'trusted writes',
       // The accessibility rules moved inside check(). These are the strings that would show up
       // if the rules came with it. This assertion keeps the merge honest.
       'aria-labelledby',
