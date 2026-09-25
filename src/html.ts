@@ -54,9 +54,11 @@ const analyse = (strings: TemplateStringsArray, collapse: boolean): Site => {
     ? src
     : src.map((s, i) => {
         let c = s;
-        if (i === 0) c = c.replace(/^[\t\n\f\r ]*\n[\t\n\f\r ]*/, '');
-        if (i === last) c = c.replace(/[\t\n\f\r ]*\n[\t\n\f\r ]*$/, '');
-        return c.replace(/[\t\n\f\r ]*\n[\t\n\f\r ]*/g, ' ');
+        // All three regexes here match the same thing: a run of HTML whitespace (tab, LF, FF, CR, space) with at
+        // least one newline in it. `\s` cannot be used here: that also takes a no-break space, which is content.
+        if (i === 0) c = c.replace(/^[\t\n\f\r ]*\n[\t\n\f\r ]*/, ''); // remove whitespace at the start
+        if (i === last) c = c.replace(/[\t\n\f\r ]*\n[\t\n\f\r ]*$/, ''); // remove whitespace at the end
+        return c.replace(/[\t\n\f\r ]*\n[\t\n\f\r ]*/g, ' '); // collapse contained whitespace to a sincle space
       });
 
   const contexts: Context[] = [];
@@ -81,6 +83,8 @@ const analyse = (strings: TemplateStringsArray, collapse: boolean): Site => {
         // The search for the comment's end starts inside its `<!--`, on purpose. The browser reads
         // `<!-->` and `<!--->` as whole comments, and the overlap ends them in the same place.
         if (s.startsWith('<!--', j)) mode = 'comment';
+        // Tests the character after the `<`. When the `<` ends the chunk there is none: if a `${…}`
+        // follows, the stand-in `'a'` counts it as a letter; at the end of the template, `''` fails.
         else if (ch === '<' && /[a-zA-Z!?/]/.test(s[j + 1] ?? (i < last ? 'a' : ''))) {
           // `<` followed by a letter, `!`, `?` or `/` starts a tag. A lone `<` is text. A `<` right
           // before a `${…}` is not lone: the browser reads a value that starts with a letter as the
@@ -105,6 +109,8 @@ const analyse = (strings: TemplateStringsArray, collapse: boolean): Site => {
           !dash &&
           !cdata &&
           lower.startsWith(`</${mode}`, j) &&
+          // The character after `</script` or `</style`. At the chunk's end the stand-in `' '` counts
+          // the `${…}` that follows as a separator, so `</script${x}>` still ends the block.
           /[\t\n\f\r />]/.test(s[j + mode.length + 2] ?? ' ')
         ) {
           // The character after the name is a separator, `>` or a `${…}`, and each sets `gap` itself.
