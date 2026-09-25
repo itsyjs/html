@@ -10,6 +10,8 @@ pnpm bench:vs [rev]   # this working tree against another revision, to check a c
 pnpm bench:size       # bytes emitted rather than time
 ```
 
+<small>All benchmark data below was produced on a base-model M5 Macbook Air</small>
+
 ## Relative speed
 
 @itsy/html is 1.00 in every column. Higher is faster, meaning 1.33 is a third faster and 0.25 is four times slower.
