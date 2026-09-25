@@ -1,22 +1,23 @@
 import { suite, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { inspect } from 'node:util';
 import type * as Lib from '#index';
 import type * as Check from '#check';
 import type * as Frame from '#frame';
 import type * as Util from '#util';
 import type * as Create from '#create';
 
-// Runs against dist/, so it only ever runs after a build: `pnpm build` runs it through
-// `postbuild`, and `pnpm check` reaches it through `check:build`. It sits in its own directory
-// because `pnpm test` globs `test/*.test.ts`, which does not recurse — so the normal suite stays
-// a fast inner loop that needs no build, and this file cannot rejoin it by accident.
+// Runs against dist/, so it only runs after a build. `pnpm build` runs it through `postbuild`,
+// and `pnpm check` reaches it through `check:build`. It sits in its own directory because
+// `pnpm test` globs `test/*.test.ts`, which does not recurse. So the normal suite stays a fast
+// inner loop that needs no build, and this file cannot rejoin it by accident.
 const dist = new URL('../../dist/', import.meta.url);
 const built = existsSync(new URL('index.js', dist)) && existsSync(new URL('index.dev.js', dist));
 
-// Deliberately not a `skip`. A missing dist/ means the invocation was wrong, and skipping would
-// report success having tested nothing — which is exactly what this file used to do, and the
-// reason it was moved out of the normal suite.
+// Deliberately not a `skip`. A missing dist/ means the invocation was wrong. A skip would report
+// success having tested nothing. This file used to do exactly that, which is why it moved out of
+// the normal suite.
 if (!built) throw new Error('dist/ is missing — run `pnpm build`, which runs these via postbuild');
 
 const load = (file: string) => import(new URL(file, dist).href) as Promise<typeof Lib>;
@@ -46,6 +47,15 @@ suite('built output', () => {
     // …and a URL from the other copy is still scheme-checked by this one.
     assert.equal(String(prod.html`<a href="${dev.raw('javascript:x')}"></a>`), '<a href="about:blank#blocked"></a>');
   });
+  test('Html keeps its name through the minifier', async () => {
+    // Minified, the class is `var n=class{…}`. console.log and Node's "Received an instance of"
+    // errors read the name, so without `static name` they would say `n`.
+    const prod = await load('index.js');
+    const dev = await load('index.dev.js');
+    assert.equal(prod.html`<b></b>`.constructor.name, 'Html');
+    assert.equal(dev.html`<b></b>`.constructor.name, 'Html');
+    assert.equal(inspect(prod.html`<b></b>`), 'Html {}');
+  });
   test('prod says E<code>, dev spells it out; both carry the code', async () => {
     const prod = await load('index.js');
     const dev = await load('index.dev.js');
@@ -63,7 +73,7 @@ suite('built output', () => {
     const dev = await loadCheck('check.dev.js');
     assert.deepEqual(prod.check('<div>'), []);
     assert.deepEqual(
-      dev.check('<div>').map((p) => p.code),
+      dev.check('<div>', { a11y: false }).map((p) => p.code),
       [9],
     );
   });
@@ -97,6 +107,18 @@ suite('built output', () => {
     assert.equal(view(prod), '<a href="sms:1">&lt;</a>');
     assert.equal(view(dev), view(prod));
   });
+  test('trusted checks in dev and writes values as they are in prod', async () => {
+    const prod = await load('index.js');
+    const dev = await load('index.dev.js');
+    const view = (h: typeof prod.html) => String(h`<a href="${'/x?a=1'}">\n  ${'a'}${[1, null]}${() => 'b'}</a>`);
+    assert.equal(view(prod.trusted), view(prod.html));
+    assert.equal(view(dev.trusted), view(prod.html));
+    // The contract: prod neither escapes nor checks a value. Dev refuses what prod would write differently.
+    assert.equal(String(prod.trusted`<p>${'<b>'}</p>`), '<p><b></p>');
+    assert.equal(String(prod.trusted`<p ${'x'}></p>`), '<p x></p>');
+    assert.throws(() => prod.trusted`<p onclick="${'x'}"></p>`, { code: 3, message: 'E3' });
+    assert.throws(() => dev.trusted`<p>${'<b>'}</p>`, { name: 'HtmlError', code: 20, message: /trusted writes/ });
+  });
   test('the prose and the flag are not in the prod bundle', () => {
     const files = readdirSync(dist).filter((f) => f.endsWith('.js') && !f.endsWith('.dev.js'));
     const src = files.map((f) => readFileSync(new URL(f, dist), 'utf8')).join('\n');
@@ -112,8 +134,41 @@ suite('built output', () => {
       'closes nothing',
       'bad tag name',
       'the URL guard blocked',
+      'trusted writes',
+      // The accessibility rules moved inside check(). These are the strings that would show up
+      // if the rules came with it. This assertion keeps the merge honest.
+      'aria-labelledby',
+      'screen reader',
+      'menuitemcheckbox',
+      'is not an ARIA role',
     ]) {
       assert.ok(!src.includes(word), `prod bundle contains "${word}"`);
+    }
+  });
+  test('check() is inert in prod and says so', async () => {
+    const prod = await loadCheck('check.js');
+    const dev = await loadCheck('check.dev.js');
+    assert.equal(prod.check.enabled, false);
+    assert.equal(dev.check.enabled, true);
+    // The hazard `enabled` exists for: a suite resolving prod passes every assertion below.
+    assert.deepEqual(prod.check('<img src="a"><div>'), []);
+    assert.deepEqual(
+      dev.check('<img src="a"><div>').map((p) => ('rule' in p ? p.rule : p.code)),
+      ['img-alt', 9],
+    );
+  });
+  test('the accessibility rules run by default, and turn off by name', async () => {
+    const dev = await loadCheck('check.dev.js');
+    assert.deepEqual(
+      dev.check('<img src="a">').map((p) => ('rule' in p ? p.rule : p.code)),
+      ['img-alt'],
+    );
+    assert.deepEqual(dev.check('<img src="a">', { a11y: false }), []);
+    assert.deepEqual(dev.check('<img src="a">', { a11y: { without: ['img-alt'] } }), []);
+  });
+  test('a11y is no longer a separate entry point', () => {
+    for (const f of ['a11y.js', 'a11y.dev.js']) {
+      assert.ok(!existsSync(new URL(f, dist)), `dist/${f} should be gone`);
     }
   });
 });

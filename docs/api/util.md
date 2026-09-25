@@ -4,7 +4,7 @@
 import { join, map, range, when, choose, wrap, comment } from '@itsy/html/util';
 ```
 
-Opt-in helpers with no shared state, one export each, so a bundler keeps only what you import.
+Opt-in helpers with no shared state, one export each, so a bundler keeps only what is imported.
 
 Everything except `comment` returns a plain array or the result of a thunk. Nothing here renders
 markup or escapes anything; the template it lands in does that, for the context it lands in.
@@ -101,6 +101,9 @@ html`<ul>${wrap(['a', 'b'], 'li', { class: 'name' })}</ul>`;
 Items are rendered by the surrounding template, so text is escaped and `Html` is not. Attributes go
 through `attrs()` with the **default** URL guard, not one from `createHtml`. A tag name that is not
 a legal tag name throws [code 17](/reference/errors#e17).
+
+Inside `<script>` and `<style>` every item must itself be `Html`, and anything else throws
+[code 6](/reference/errors#e6): escaping keeps text from ending the block, but not from running.
 
 ## comment
 

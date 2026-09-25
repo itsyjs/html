@@ -1,6 +1,6 @@
 # Types
 
-Every export is typed in its `.d.ts`; this is the shape of the ones you are likely to write out.
+Every export is typed in its `.d.ts`; this is the shape of the ones most likely to be written out.
 
 ## `Renderable`
 
@@ -93,16 +93,34 @@ interface Finding<R extends string = string> {
 }
 ```
 
-What the [accessibility rules](/api/a11y) report, mixed into the same list as `Problem` when you
-pass `a11y` to [`check()`](/api/check). Names, not numbers: these are not
+What a rule reports, mixed into the same list as `Problem` by
+[`check()`](/api/check). Names, not numbers: these are not
 [`HtmlError` codes](/reference/errors), and nothing here ever throws. Tell the two apart with
 `'rule' in p`. From `@itsy/html/check`.
 
-`A11yRule`, from `@itsy/html/a11y`, is the union of the nineteen names the rules can report.
-`check(markup, { a11y })` returns `Finding<A11yRule>`, so a comparison against a name that does not
-exist is a type error rather than a test that never matches, and `without()` checks its arguments
-the same way. `RuleSet` is the type of `check()`'s `a11y` option; its shape is not public API, so
-write your own at your own risk.
+`A11yRule` is the union of the twenty-five names the built-in accessibility rules can report.
+`check(markup)` returns `Finding<A11yRule>`, so a comparison against a name that does not exist is
+a type error rather than a test that never matches, and `a11y: { without: [...] }` checks its
+entries the same way. That object is `A11yOptions`, also from `@itsy/html/check`.
+
+## `RuleSet`, `Visitor`, `Report`
+
+```ts
+type RuleSet = (report: Report) => Visitor;
+type Report = (rule: string, message: string, at: number) => void;
+
+interface Visitor {
+  open?: (tag: string, attrs: ReadonlyMap<string, string>, at: number, ancestors: readonly string[]) => void;
+  text?: (content: string, at: number, ancestors: readonly string[]) => void;
+  close?: (tag: string, at: number, hadText: boolean) => void;
+  end?: (ids: ReadonlyMap<string, number>) => void;
+}
+```
+
+A project's own rules, for `check()`'s [`rules`](/api/check#custom-rules) option. Every hook is
+optional. From `@itsy/html/check`.
+
+Passing custom rules widens the result to `Finding<string>`, since this cannot know their names.
 
 ## `FrameOptions`, `HeadEntry`, `FramePart`
 

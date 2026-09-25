@@ -1,32 +1,55 @@
-// The comparison tables: every column gets one unit, and the first drops units entirely,
-// because a unit per row is useless when you read down a column — 947 µs against 2.66 ms
-// against 190 µs is three conversions before you know who won.
+// The comparison tables. Each column gets one unit, and the first table drops units
+// entirely. A unit per row is useless when reading down a column: 947 µs against 2.66 ms
+// against 190 µs takes three conversions to see who won.
 //
-// Every renderer is measured in its own process, containing that renderer and nothing else.
+// Each renderer is measured in its own process, containing that renderer and nothing else.
 //
-// That is not fussiness. A process holding all seven does not measure any of them honestly:
-// renderers/lit.js installs a global DOM shim on import, and @itsy/html used to declare a
-// String subclass, which cost every other library in the process up to 2.8x — enough to
-// reverse who won. Hence spec.js, which carries the case list and the module paths and
-// deliberately imports no renderer, so a child can load exactly one.
+// This is not fussiness. A process holding all seven measures none of them honestly:
+// renderers/lit.js installs a global DOM shim on import, and @itsy/html once declared a
+// String subclass that slowed every other library in the process by up to 2.8x, enough to
+// reverse who won. Hence spec.js: it carries the case list and the module paths and
+// imports no renderer, so a child can load exactly one.
 //
-// One library per process is also how the thing actually runs in production.
+// One library per process is also how a renderer runs in production.
+//
+// The clean cases get a process of their own too, apart from the same renderer's shared cases.
+// The shared tables then come from the same processes as before the clean cases existed: the
+// same code, warmed the same way. What else runs in a process moves its numbers (see warmup()
+// in harness.js), and a table must not depend on which other table was measured beside it.
 
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { do_not_optimize, measure } from 'mitata';
-import { ATTR_CASES, ATTR_KEYS, ATTR_RENDERERS, CASES, CASE_KEYS, MIN_CPU_TIME, RENDERERS } from './spec.js';
+import {
+  ATTR_CASES,
+  ATTR_KEYS,
+  ATTR_RENDERERS,
+  CASES,
+  CASE_KEYS,
+  CLEAN_CASES,
+  CLEAN_KEYS,
+  CLEAN_RENDERERS,
+  MIN_CPU_TIME,
+  RENDERERS,
+} from './spec.js';
 
-// Child: measure one renderer and hand the numbers back as JSON. Note what is *not* imported
-// above — harness.js pulls in every renderer, so the child must never touch it.
+// The cases one child measures: a renderer's shared cases (with attrs, where it can), or its
+// clean ones.
+const GROUPS = {
+  shared: (spec) => (spec.shared === false ? [] : [...CASE_KEYS, ...(ATTR_RENDERERS.includes(spec.name) ? ATTR_KEYS : [])]),
+  clean: (spec) => (CLEAN_RENDERERS.includes(spec.name) ? CLEAN_KEYS : []),
+};
+
+// Child: measure one group of one renderer and return the numbers as JSON. Note what is *not*
+// imported above: harness.js pulls in every renderer, so the child must never touch it.
 const only = process.argv[2];
 if (only !== undefined) {
   const spec = RENDERERS[Number(only)];
   const r = (await import(spec.module))[spec.export];
-  const keys = ATTR_RENDERERS.includes(spec.name) ? [...CASE_KEYS, ...ATTR_KEYS] : CASE_KEYS;
+  const keys = GROUPS[process.argv[3]](spec);
 
-  // Warm the process. mitata warms each function it is handed but cannot do this, and measured
-  // cold a case reads ~30% slow.
+  // Warm the process. mitata warms each function it is given but not the process, and a case
+  // measured cold reads ~30% slow.
   for (let i = 0; i < 12; i++) for (const k of keys) r[k]();
 
   const mine = {};
@@ -40,18 +63,21 @@ const { baseline, contenders, verify } = await import('./harness.js');
 verify();
 
 const self = fileURLToPath(import.meta.url);
-const ns = Object.fromEntries(CASE_KEYS.map((k) => [k, {}]));
-const attrNs = Object.fromEntries(ATTR_KEYS.map((k) => [k, {}]));
+// `ns[case][renderer]`. A renderer only fills the cases it ran, so each table reads only its own.
+const ns = Object.fromEntries([...CASE_KEYS, ...ATTR_KEYS, ...CLEAN_KEYS].map((k) => [k, {}]));
 for (const [i, spec] of RENDERERS.entries()) {
-  if (process.stderr.isTTY) process.stderr.write(`\rmeasuring ${spec.name}${' '.repeat(40)}`);
-  const out = JSON.parse(execFileSync(process.execPath, ['--expose-gc', self, String(i)], { encoding: 'utf8' }));
-  for (const k of CASE_KEYS) ns[k][spec.name] = out[k];
-  for (const k of ATTR_KEYS) if (k in out) attrNs[k][spec.name] = out[k];
+  for (const group of Object.keys(GROUPS)) {
+    if (GROUPS[group](spec).length === 0) continue;
+    if (process.stderr.isTTY) process.stderr.write(`\rmeasuring ${spec.name}, ${group}${' '.repeat(40)}`);
+    const args = ['--expose-gc', self, String(i), group];
+    const out = JSON.parse(execFileSync(process.execPath, args, { encoding: 'utf8' }));
+    for (const [k, v] of Object.entries(out)) ns[k][spec.name] = v;
+  }
 }
 if (process.stderr.isTTY) process.stderr.write(`\r${' '.repeat(60)}\r`);
 
-// One unit for a whole column, chosen from the column median. Not from the fastest
-// entry: that is the unescaped baseline, and it would put the real contenders in the
+// One unit for a whole column, chosen from the column median, not the fastest entry.
+// The fastest is the unescaped baseline, and it would put the real contenders in the
 // thousands of the unit below.
 const unit = (row) => {
   const sorted = Object.values(row).sort((a, b) => a - b);
@@ -73,11 +99,11 @@ const render = (title, note, head, rows) => {
 
 // Relative to @itsy/html, so a reader can see the gap without doing arithmetic.
 const speed = (key, name) => ns[key][baseline.name] / ns[key][name];
-const mean = (name) => Math.exp(CASE_KEYS.reduce((s, k) => s + Math.log(speed(k, name)), 0) / CASE_KEYS.length);
+const mean = (name, keys = CASE_KEYS) => Math.exp(keys.reduce((s, k) => s + Math.log(speed(k, name)), 0) / keys.length);
 const order = [...contenders].sort((a, b) => mean(b.name) - mean(a.name));
 
-// Both tables take their headers and their cells from CASE_KEYS, so a case added in one
-// place cannot end up labelled with another one's name.
+// Both tables take their headers and cells from CASE_KEYS, so a case added in one place
+// cannot end up labelled with another one's name.
 render(
   'Relative speed',
   `Higher is faster. ${baseline.name} is 1.00 in every column, so 2.11 means twice as fast as it and 0.50 means half.`,
@@ -93,18 +119,38 @@ render(
 );
 
 // A separate table, because only three of the seven can do this at all.
-const attrOrder = ATTR_RENDERERS.map((name) => ({ name })).sort((a, b) => attrNs.attrs[a.name] - attrNs.attrs[b.name]);
+const attrOrder = ATTR_RENDERERS.map((name) => ({ name })).sort((a, b) => ns.attrs[a.name] - ns.attrs[b.name]);
 render(
   'Attributes from an object',
   'Ten links whose attribute names come from an object at render time, not from the template.\n' +
     'lit is absent because @lit-labs/ssr cannot render an element part; hono and ghtml because neither\n' +
     'has an attribute mechanism, so their rows would time our string builder rather than the library.',
-  ['renderer', `${ATTR_CASES.attrs} (${unit(attrNs.attrs)[0]})`, 'vs hand-written'],
+  ['renderer', `${ATTR_CASES.attrs} (${unit(ns.attrs)[0]})`, 'vs hand-written'],
   attrOrder.map((r) => [
     r.name,
-    fmt(attrNs.attrs[r.name] / unit(attrNs.attrs)[1]),
-    (attrNs.attrs['hand-written (escape + concat)'] / attrNs.attrs[r.name]).toFixed(2),
+    fmt(ns.attrs[r.name] / unit(ns.attrs)[1]),
+    (ns.attrs['hand-written (escape + concat)'] / ns.attrs[r.name]).toFixed(2),
   ]),
+);
+
+// The clean cases: `trusted` beside `html`, on the only data `trusted` is for.
+const cleanOrder = [...CLEAN_RENDERERS].sort((a, b) => mean(b, CLEAN_KEYS) - mean(a, CLEAN_KEYS));
+render(
+  'Nothing to escape',
+  `The same templates over data with nothing to escape, the only data trusted takes. ${baseline.name} is 1.00;\n` +
+    'all four write the same bytes.',
+  ['renderer', ...CLEAN_KEYS.map((k) => CLEAN_CASES[k]), 'overall'],
+  cleanOrder.map((name) => [
+    name,
+    ...CLEAN_KEYS.map((k) => speed(k, name).toFixed(2)),
+    mean(name, CLEAN_KEYS).toFixed(2),
+  ]),
+);
+render(
+  'Nothing to escape: time per render',
+  'One unit per column. Lower is faster.',
+  ['renderer', ...CLEAN_KEYS.map((k) => `${CLEAN_CASES[k]} (${unit(ns[k])[0]})`)],
+  cleanOrder.map((name) => [name, ...CLEAN_KEYS.map((k) => fmt(ns[k][name] / unit(ns[k])[1]))]),
 );
 
 console.log();

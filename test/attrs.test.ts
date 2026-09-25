@@ -86,10 +86,10 @@ suite('attrs', () => {
   });
 });
 
-// A tri-state boolean is written out without ever reaching `attrValue`, so it never sees the
-// `on*` refusal or the URL guard. That shortcut rests on a fact about the sets involved: if a
-// tri name ever became a URL attribute or an event handler it would turn into a hole, and
-// nothing else would notice.
+// A tri-state boolean is written out without reaching `attrValue`, so it skips the `on*`
+// refusal and the URL guard. That shortcut is safe only while the sets stay apart. A tri name
+// that became a URL attribute or an event handler would open a hole, and nothing else would
+// notice.
 suite('attrs shortcuts', () => {
   test('every URL attribute is guarded, whatever its case', () => {
     for (const name of URL_ATTRS) {
@@ -105,8 +105,6 @@ suite('attrs shortcuts', () => {
     assert.equal(s(attrs({ on: 'x' })), 'on="x"'); // `on` alone is not `on[a-z]`
   });
   test('no tri attribute is a URL attribute or an event handler', () => {
-    // A tri boolean is written out without going through attrValue, so a tri name that was
-    // also a URL attribute or an on* handler would dodge both checks.
     for (const name of ['aria-x', 'ARIA-Hidden', 'draggable', 'spellcheck', 'contenteditable']) {
       assert.equal(s(attrs({ [name]: true })), `${name}="true"`);
       assert.equal(s(attrs({ [name]: false })), `${name}="false"`);
@@ -114,15 +112,15 @@ suite('attrs shortcuts', () => {
     for (const name of URL_ATTRS) assert.equal(s(attrs({ [name]: false })), ''); // not tri, so omitted
   });
   test('an odd name still routes through the full lookup', () => {
-    // attrValue lowercases and lets the Set decide; no shape of name short-circuits that.
+    // attrValue lowercases the name and lets the Set decide. No shape of name skips that.
     // An empty name renders too, and meets the separator logic in `one`.
     assert.equal(s(attrs({ ärger: 'x' })), 'ärger="x"');
     assert.equal(s(attrs({ '': 'x' })), '="x"');
   });
   test('quirks that must not drift', () => {
     // The current behaviour, pinned so an optimisation cannot quietly change it. The first two
-    // are why `attrs()`'s own @throws line does not promise code 3 whatever the value: a boolean
-    // never reaches attrValue. (The template scanner is the stricter one - see AGENTS.md.)
+    // are why the @throws line on `attrs()` does not promise code 3 for every value: a boolean
+    // never reaches attrValue. (The template scanner is stricter; see AGENTS.md.)
     assert.equal(s(attrs({ onclick: true })), 'onclick');
     assert.equal(s(attrs({ onclick: false })), '');
     assert.equal(s(attrs({ a: true, '': true })), 'a ');

@@ -18,7 +18,7 @@ any relative URL — always passes. Anything else renders as `about:blank#blocke
 
 ## It never throws
 
-A blocked URL is bad data, not a mistake in your markup, and data must not be able to crash a page
+A blocked URL is bad data, not a mistake in the markup, and data must not be able to crash a page
 render. So the guard substitutes rather than throwing. To find out whether it fired, run
 [`check()`](/guide/checks#check) over the rendered page: every blocked
 URL is reported as [code 19](/reference/errors#e19).
@@ -43,7 +43,7 @@ inert either way.
 
 ## Adding a scheme
 
-`createHtml` gives you an `html` and `attrs` with their own scheme list. Call it once, at module scope.
+`createHtml` returns an `html` and `attrs` with their own scheme list. Call it once, at module scope.
 
 ```ts
 import { createHtml, SCHEMES } from '@itsy/html/create';
@@ -52,8 +52,8 @@ export const { html, attrs } = createHtml({ schemes: [...SCHEMES, 'sms'] });
 ```
 
 `schemes` replaces the set rather than extending it, so spread `SCHEMES` to keep the defaults —
-`createHtml({ schemes: ['https'] })` allows https and nothing else, which is sometimes what you
-want.
+`createHtml({ schemes: ['https'] })` allows https and nothing else, which is sometimes exactly what
+is needed.
 
 For one link, widening the guard for a whole page is the wrong size of tool. Write the tag:
 
@@ -62,7 +62,7 @@ html`<p>${raw('<a href="sms:+4712345678">Text us</a>')}</p>`;
 ```
 
 ::: warning
-`frame` and `wrap()` always use the default set. A scheme you allowed through `createHtml` is
+`frame` and `wrap()` always use the default set. A scheme allowed through `createHtml` is
 still blocked in a frame head entry or a `wrap()` attribute.
 :::
 
@@ -71,7 +71,7 @@ still blocked in a frame head entry or a `wrap()` attribute.
 ::: details `data:` is allowed, and `data:text/html` is a real document
 `data:` is on the list so inline images work. But a `data:text/html` URL in an `<iframe>`,
 `<object>` or `<embed>` renders whatever it carries, in its own origin. If such a URL can come from
-a user, check its MIME type yourself, or use `createHtml({ schemes: [...] })` with `data`
+a user, check its MIME type first, or use `createHtml({ schemes: [...] })` with `data`
 left out.
 :::
 

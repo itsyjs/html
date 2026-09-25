@@ -2,9 +2,9 @@ import { auditTemplate } from './audit.ts';
 import { BRAND, Html, HtmlError, REFUSED, SCHEMES, URL_ATTRS, esc, safeUrl } from './shared.ts';
 
 /**
- * What can go in an interpolation `${…}`: text, numbers, `Html`, lists of these, or a function that returns one of these.
+ * What a `${…}` can hold: text, numbers, `Html`, lists of these, or a function that returns one of them.
  *
- * A function is called at render time, so rendering is 'lazy'
+ * A function is a thunk: it is called at render time.
  *
  * Objects and promises are left out on purpose. `${user}` is a type error, not `[object Object]`, and a promise would make rendering async.
  */
@@ -19,83 +19,112 @@ export type Renderable =
   | Iterable<Renderable>
   | (() => Renderable);
 
-/** Where one `${…}` sits in the markup. Established once per template, then reused on every render. */
-interface Context {
+/** Where one `${…}` sits in the markup. Found once per template, then reused on every render. */
+export interface Context {
   /** Set when only `Html` is allowed here: inside a tag, `<script>`, `<style>` or a comment. The dev build names the place. */
   only?: string;
   /**
-   * Set when the `${…}` is inside a quoted attribute that holds a URL, so its value is scheme checked.
+   * Set when the `${…}` is inside a quoted URL attribute, so its value is scheme-checked.
    *
-   * Any other attribute is escaped exactly like text, so it needs nothing recorded here.
+   * Any other attribute is escaped exactly like text and needs nothing here.
    */
   url?: boolean;
+  /** Dev build only, set for `trusted`: a value that escaping or the URL guard would change throws. */
+  strict?: boolean;
 }
 
-// Everything known about one template: static pieces, and the context of each `${…}` between them.
-interface Site {
+// One scanned template: its static chunks, and the context of each `${…}` between them.
+export interface Site {
   chunks: string[];
   contexts: Context[];
 }
 
-// What the scanner is currently inside of.
+// What the scanner is inside.
 type Mode = 'text' | 'tag' | 'value' | 'script' | 'style' | 'comment';
 
-// Reads the static markup of a template once and records the context of every `${…}`.
-// It only reads the fixed strings, never values, so data cannot fool it.
-const analyse = (strings: TemplateStringsArray, collapse: boolean): Site => {
-  // Use the "cooked" strings, where `\n` is a newline, like a normal template literal.
-  // A cooked string is only `undefined` for an invalid escape; then the raw text is what was meant.
+/**
+ * Scans a template's static markup once and records the context of every `${…}`.
+ * It reads only the fixed strings, never values, so data cannot fool it.
+ *
+ * `trusted` takes its chunks from here too, so the two tags write the same static markup.
+ * @internal
+ */
+export const analyse = (strings: TemplateStringsArray, collapse: boolean): Site => {
+  // Use the cooked strings, where `\n` is a newline, as in a normal template literal.
+  // A cooked string is `undefined` only after an invalid escape. The raw text is then what was meant.
   const src = Array.from(strings, (s, i) => s ?? strings.raw[i]!);
   const last = src.length - 1;
   // Whitespace with a newline in it becomes one space, unless the template has <pre> or <textarea>.
-  // One space and never nothing, so `<b>a</b>\n<i>b</i>` still reads "a b". Only the template's own edges lose it.
+  // One space, never nothing, so `<b>a</b>\n<i>b</i>` still reads "a b". Only the template's own edges lose it.
   const keep = !collapse || /<(?:pre|textarea)\b/i.test(src.join(''));
   const chunks = keep
     ? src
     : src.map((s, i) => {
         let c = s;
-        if (i === 0) c = c.replace(/^\s*\n\s*/, '');
-        if (i === last) c = c.replace(/\s*\n\s*$/, '');
-        return c.replace(/\s*\n\s*/g, ' ');
+        // All three regexes here match the same thing: a run of HTML whitespace (tab, LF, FF, CR, space) with at
+        // least one newline in it. `\s` cannot be used here: that also takes a no-break space, which is content.
+        if (i === 0) c = c.replace(/^[\t\n\f\r ]*\n[\t\n\f\r ]*/, ''); // remove whitespace at the start
+        if (i === last) c = c.replace(/[\t\n\f\r ]*\n[\t\n\f\r ]*$/, ''); // remove whitespace at the end
+        return c.replace(/[\t\n\f\r ]*\n[\t\n\f\r ]*/g, ' '); // collapse contained whitespace to a single space
       });
 
   const contexts: Context[] = [];
   let mode: Mode = 'text';
-  let tag = ''; // name of the tag we are inside, like "script"
-  let attr = ''; // the attribute name read most recently
+  let tag = ''; // name of the open tag, like "script"
+  let attr = ''; // the last attribute name read
   let quote = ''; // the quote that opened the current attribute value
   let after = ''; // 'eq' right after an `=`, 'bare' inside an unquoted value, else ''
   let gap = false; // inside a tag: has a separator (whitespace, `/`, a value, a `${…}`) come since the last name character?
+  // Inside <script> or <style>: is a `<!--` or a `<![CDATA[` open? Both are false when a block
+  // starts, since a block ends only while neither is open.
+  let dash = false;
+  let cdata = false;
 
   for (let i = 0; i < src.length; i++) {
     const s = src[i]!;
     const lower = s.toLowerCase(); // the end tags of <script> and <style> match in any case
-    // Walk this chunk one character at a time, keeping `mode` up to date.
+    // Walk this chunk one character at a time and keep `mode` current.
     for (let j = 0; j < s.length; j++) {
       const ch = s[j]!;
       if (mode === 'text') {
-        if (s.startsWith('<!--', j)) {
-          mode = 'comment';
-          j += 3;
-        } else if (ch === '<' && /[a-zA-Z!?/]/.test(s[j + 1] ?? '')) {
-          // `<` followed by a letter, `!`, `?` or `/` starts a tag. A lone `<` is just text.
+        // The search for the comment's end starts inside its `<!--`, on purpose. The browser reads
+        // `<!-->` and `<!--->` as whole comments, and the overlap ends them in the same place.
+        if (s.startsWith('<!--', j)) mode = 'comment';
+        // Tests the character after the `<`. When the `<` ends the chunk there is none: if a `${…}`
+        // follows, the stand-in `'a'` counts it as a letter; at the end of the template, `''` fails.
+        else if (ch === '<' && /[a-zA-Z!?/]/.test(s[j + 1] ?? (i < last ? 'a' : ''))) {
+          // `<` followed by a letter, `!`, `?` or `/` starts a tag. A lone `<` is text. A `<` right
+          // before a `${…}` is not lone: the browser reads a value that starts with a letter as the
+          // tag name, so the value is inside the tag.
           mode = 'tag';
           tag = attr = after = '';
           gap = false;
         }
       } else if (mode === 'comment') {
-        if (s.startsWith('-->', j)) {
-          mode = 'text';
-          j += 2;
-        }
+        if (s.startsWith('-->', j) || s.startsWith('--!>', j)) mode = 'text';
       } else if (mode === 'script' || mode === 'style') {
-        // Inside <script> or <style> everything is text until the end tag: `</script` and then whitespace, `/` or `>`.
-        if (lower.startsWith(`</${mode}`, j) && /[\s/>]/.test(s[j + mode.length + 2] ?? ' ')) {
+        // Inside <script> or <style> everything is text until the end tag: `</script` then whitespace, `/` or `>`.
+        // The end tag does not count while a `<!--` or `<![CDATA[` is open. In an HTML <script> that
+        // is the tokenizer's escaped states. In SVG it is a comment or a CDATA section, where an end
+        // tag is text. The scanner cannot tell which, so the block stays open. That can only refuse
+        // more.
+        if (s.startsWith('<!--', j)) dash = true;
+        else if (s.startsWith('-->', j)) dash = false;
+        else if (s.startsWith('<![CDATA[', j)) cdata = true;
+        else if (s.startsWith(']]>', j)) cdata = false;
+        else if (
+          !dash &&
+          !cdata &&
+          lower.startsWith(`</${mode}`, j) &&
+          // The character after `</script` or `</style`. At the chunk's end the stand-in `' '` counts
+          // the `${…}` that follows as a separator, so `</script${x}>` still ends the block.
+          /[\t\n\f\r />]/.test(s[j + mode.length + 2] ?? ' ')
+        ) {
+          // The character after the name is a separator, `>` or a `${…}`, and each sets `gap` itself.
           j += mode.length + 1;
           mode = 'tag';
           tag = '/'; // a stand-in name, so the tag that closes here cannot open the block again
           attr = '';
-          gap = true;
         }
       } else if (mode === 'value') {
         // Inside a quoted attribute value only the matching quote matters.
@@ -105,7 +134,7 @@ const analyse = (strings: TemplateStringsArray, collapse: boolean): Site => {
           gap = true; // whatever follows the quote starts a new attribute name, never part of the tag name
         }
       } else {
-        // Inside a tag: reading the tag name, attribute names, `=` and `>`.
+        // Inside a tag: the tag name, attribute names, `=` and `>`.
         if (after === 'eq') {
           if (ch === '"' || ch === "'") {
             mode = 'value';
@@ -113,26 +142,25 @@ const analyse = (strings: TemplateStringsArray, collapse: boolean): Site => {
             after = '';
             continue;
           }
-          if (/\s/.test(ch)) continue;
+          if (/[\t\n\f\r ]/.test(ch)) continue;
           after = ch === '>' ? '' : 'bare'; // a value with no quotes around it
         }
         if (after === 'bare') {
-          if (!/[\s>]/.test(ch)) continue; // still inside the unquoted value
-          after = '';
+          if (!/[\t\n\f\r >]/.test(ch)) continue; // still inside the unquoted value
+          // The value ends, and so does its attribute: in `a=b ="…"` the `=` starts a new name.
+          after = attr = '';
         }
         if (ch === '>') {
           const t = tag.toLowerCase();
           mode = t === 'script' || t === 'style' ? t : 'text';
         } else if (tag === '') tag += ch; // the first character of the tag name: a letter, or `/` `!` `?`
-        else if (ch === '=' && attr !== '') {
-          after = 'eq'; // `href =` still belongs to href
-          gap = false;
-        } else if (/[\s/]/.test(ch)) {
+        else if (ch === '=' && attr !== '') after = 'eq'; // `href =` still belongs to href
+        else if (/[\t\n\f\r /]/.test(ch)) {
           gap = true; // a separator: the next name character starts a new name
           if (ch === '/') attr = ''; // and after a `/` even a `=` starts one, as in the browser
         } else if (!gap && attr === '') tag += ch; // the rest of the tag name
         else {
-          // An attribute name. A `=` with no name before it starts one too, as it does in the browser.
+          // An attribute name. A `=` with no name before it starts one too, as in the browser.
           if (gap) attr = '';
           attr += ch;
           gap = false;
@@ -149,37 +177,75 @@ const analyse = (strings: TemplateStringsArray, collapse: boolean): Site => {
           __DEV__ && `expression ${i}: refusing to interpolate into "${attr}": it is code, not text`,
         );
       }
-      // Worked out here, once, rather than on every render: the name cannot change.
+      // Decided once here, not on every render: the name cannot change.
       contexts.push({ url: URL_ATTRS.has(attr.toLowerCase()) });
     } else if (mode === 'text') contexts.push({});
     else if (mode === 'tag' && after !== '') {
       throw new HtmlError(5, __DEV__ && `quote the attribute value before expression ${i}: …${s.slice(-40)}`);
     } else {
       // Inside a tag, a comment, <script> or <style>: only Html may go here.
-      if (mode === 'tag') gap = true; // a `${…}` in a tag stands for attributes we cannot see
+      const name = mode === 'tag' && tag === ''; // right after a `<`, where the tag's name goes
+      if (mode === 'tag') {
+        // A `${…}` in a tag stands for attributes the scanner cannot see, so what follows it starts
+        // a new name. A `="…"` right after it belongs to whatever the value wrote last, not to `attr`.
+        gap = true;
+        attr = '';
+      }
       contexts.push({
-        only: __DEV__ ? (mode === 'tag' ? 'a tag' : mode === 'comment' ? 'a comment' : `<${mode}>`) : '',
+        only: __DEV__
+          ? name
+            ? 'a tag, right after `<` where its name goes (write `&lt;` for a less-than sign)'
+            : mode === 'tag'
+              ? 'a tag'
+              : mode === 'comment'
+                ? 'a comment'
+                : dash || cdata
+                  ? `<${mode}>, which has a \`${dash ? '<!--' : '<![CDATA['}\` still open, so where it ends is unclear`
+                  : `<${mode}>`
+          : '',
       });
     }
   }
-  // In dev, also check the markup for mistakes the browser would silently repair. See audit.ts.
+  // The dev build also checks the markup for mistakes the browser silently repairs. See audit.ts.
   if (__DEV__) auditTemplate(src);
   return { chunks, contexts };
 };
 
 // The escaper for a value that is already Html: nothing to do.
-const trusted = (s: string): string => s;
+const asIs = (s: string): string => s;
+
+// Dev build only, for `trusted`, which writes values out as they are in production: the value had
+// to come through unchanged here, or production would write something `html` never would.
+const unchanged = (out: string, value: string, ctx: Context, i: number): string => {
+  // No `__DEV__ &&` on the message: this whole branch is gone from the production build.
+  if (__DEV__ && ctx.strict && out !== value) {
+    const was = JSON.stringify(value.slice(0, 60));
+    const is = JSON.stringify(out.slice(0, 60));
+    throw new HtmlError(
+      20,
+      `expression ${i}: trusted writes ${was} as it is, where html writes ${is}; use html for a template that takes this value`,
+    );
+  }
+  return out;
+};
 
 // Turns one value into a string, escaped for the context it lands in. `i` is the number of the `${…}`, for error messages.
 const render = (value: Renderable, ctx: Context, schemes: ReadonlySet<string>, i: number): string => {
-  // A plain string in ordinary markup is the common case by a wide margin, so it is settled first.
-  // A string somewhere only Html may go falls through to the code 6 throw below.
-  if (typeof value === 'string' && ctx.only === undefined) return ctx.url ? safeUrl(value, schemes) : esc(value);
+  // A plain string in ordinary markup is by far the most common case, so it goes first.
+  // A string where only Html may go falls through to the code 6 throw below.
+  if (typeof value === 'string' && ctx.only === undefined) {
+    const out = ctx.url ? safeUrl(value, schemes) : esc(value);
+    return __DEV__ ? unchanged(out, value, ctx, i) : out;
+  }
   if (typeof value === 'function') return render(value(), ctx, schemes, i); // call it, render what comes back
   if (value == null || value === false) return '';
-  // Already HTML, no need to escape - scheme-check a url attribute though
-  // Read through the brand slot when it's a true Html
-  if (value instanceof Html) return ctx.url ? safeUrl(value[BRAND], schemes, trusted) : value[BRAND];
+  // Already Html: no escaping, but a URL attribute is still scheme-checked.
+  // A true Html is read through its brand slot.
+  if (value instanceof Html) {
+    if (!ctx.url) return value[BRAND];
+    const out = safeUrl(value[BRAND], schemes, asIs);
+    return __DEV__ ? unchanged(out, value[BRAND], ctx, i) : out;
+  }
   if (typeof value === 'object' && typeof value[Symbol.iterator] === 'function') {
     // A list: render each item in this same context, one after the other.
     let out = '';
@@ -201,15 +267,19 @@ const render = (value: Renderable, ctx: Context, schemes: ReadonlySet<string>, i
  *
  * @param schemes The URL schemes the guard allows, lowercase.
  * @param collapse Whether whitespace with a newline in it becomes one space in the static markup.
+ * @param strict Dev build only: throw code 20 for a value escaping or the URL guard would change. The dev `trusted`.
  * @internal
  */
-export const createTag = (schemes: ReadonlySet<string>, collapse: boolean) => {
+export const createTag = (schemes: ReadonlySet<string>, collapse: boolean, strict?: boolean) => {
   // JavaScript hands a tagged template the same `strings` array object every
   // time that line runs, so it works as a cache key: each template is scanned once.
   const sites = new WeakMap<TemplateStringsArray, Site>();
   return (strings: TemplateStringsArray, ...values: Renderable[]): Html => {
     let site = sites.get(strings);
-    if (!site) sites.set(strings, (site = analyse(strings, collapse)));
+    if (!site) {
+      sites.set(strings, (site = analyse(strings, collapse)));
+      if (__DEV__ && strict) for (const ctx of site.contexts) ctx.strict = true;
+    }
     // Put the markup back together: static chunk, rendered value, static chunk, and so on.
     let out = site.chunks[0]!;
     for (let i = 0; i < values.length; i++) {

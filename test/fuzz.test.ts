@@ -58,7 +58,7 @@ suite('fuzz: text and attribute values', () => {
       for (let k = Math.floor(r() * 8); k > 0; k--) v += pick(r, bits);
       const out = s(html`<p title="${v}">${v}</p>`);
       assert.deepEqual(check(out), [], JSON.stringify(v));
-      assert.equal((out.match(/</g) ?? []).length, 2, JSON.stringify(v)); // only the two we wrote
+      assert.equal((out.match(/</g) ?? []).length, 2, JSON.stringify(v)); // only the two in the template
       assert.equal((out.match(/"/g) ?? []).length, 2, JSON.stringify(v)); // only the two around title
     }
   });

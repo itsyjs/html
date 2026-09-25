@@ -1,14 +1,14 @@
-import { attrsOf, few, hostile, items, nav, one } from '../fixtures.js';
+import { attrsOf, clean, few, hostile, items, nav, one } from '../fixtures.js';
 
 // Two reference points, not libraries.
 //
-// `escaped` is what you would write by hand: the same escaping, no scanner, no
-// context, no URL guard. It is the fastest a correct hand-rolled renderer gets.
-// `raw` skips escaping entirely — the speed of light, and a hole in your site.
+// `escaped` is the hand-written version: the same escaping, but no scanner, no
+// context and no URL guard. It is the fastest a correct hand-rolled renderer gets.
+// `raw` skips escaping entirely: the speed of light, and a hole in the site.
 
-// The same scan-and-slice escaper @itsy/html and hono use. A `replace` with a
-// callback is what most people write by hand and is roughly half the speed, but
-// this row is meant to be the floor for a correct renderer, not a typical one.
+// The same scan-and-slice escaper @itsy/html and hono use. Most hand-written code
+// uses `replace` with a callback, which runs at about half the speed. But this row
+// is the floor for a correct renderer, not a typical one.
 const FIRST = /[&<>"']/;
 const esc = (s) => {
   let at = s.search(FIRST);
@@ -32,12 +32,12 @@ const esc = (s) => {
 };
 
 // Attributes from an object, written by hand: no scanner, no URL guard, and the tri-state
-// rule spelled out rather than derived from a set. This is the floor the `attrs` case is
-// measured against — the only helper in this file that @itsy/html's attrs() has to beat.
+// rule spelled out rather than derived from a set. This is the floor for the `attrs` case,
+// and the only helper in this file that @itsy/html's attrs() has to beat.
 //
-// It handles exactly what attrsOf() produces, not the general rule: `aria-*` only, where
-// attrs() also treats draggable, spellcheck and contenteditable as tri-state. Widen the
-// fixture and this needs widening with it, which verify() will say so loudly.
+// It handles exactly what attrsOf() produces, not the general rule: `aria-*` only, while
+// attrs() also treats draggable, spellcheck and contenteditable as tri-state. A wider
+// fixture needs a wider helper here, and verify() fails loudly until it has one.
 const TRI = /^aria-/;
 const buildAttrs = (o) => {
   let out = '';
@@ -60,6 +60,15 @@ const Row = (i) =>
 const Group = (g) =>
   `<section><h2>${esc(g.title)}</h2><ul>${g.links.map((l) => `<li>${Link(l)}</li>`).join('')}</ul></section>`;
 
+// The clean cases take their data as arguments, as renderers/itsy.js writes them for `html`
+// and `trusted`, so the four in that table run the same shape of code.
+const Card = (i) =>
+  `<article class="card ${i.featured ? 'is-featured' : ''}" data-id="${i.id}" title="${esc(i.name)}"><h3>${esc(i.name)}</h3><p>${i.price.toFixed(2)}</p></article>`;
+const Page = (n, f) =>
+  `<main><h1>Catalogue</h1>${n.map(Group).join('')}<ol>${f.map((i) => `<li>${Link(i)}</li>`).join('')}</ol></main>`;
+const Table = (rows) => `<table><tbody>${rows.map(Row).join('')}</tbody></table>`;
+const Text = (s) => `<p>${esc(s)}</p>`;
+
 export const escaped = {
   name: 'hand-written (escape + concat)',
   link: () => Link(one),
@@ -70,6 +79,11 @@ export const escaped = {
   page: () =>
     `<main><h1>Catalogue</h1>${nav.map(Group).join('')}<ol>${few.map((i) => `<li>${Link(i)}</li>`).join('')}</ol></main>`,
   attrs: () => `<ul>${few.map((i) => `<li><a${buildAttrs(attrsOf(i))}>${esc(i.name)}</a></li>`).join('')}</ul>`,
+  cleanLink: () => Link(clean().one),
+  cleanCard: () => Card(clean().one),
+  cleanPage: () => Page(clean().nav, clean().few),
+  cleanTable: () => Table(clean().items),
+  cleanText: () => Text(clean().text),
 };
 
 const RawLink = (i) => `<a href="${i.href}" class="link ${i.featured ? 'is-featured' : ''}">${i.name}</a>`;
@@ -77,10 +91,16 @@ const RawRow = (i) =>
   `<tr><td>${i.id}</td><td>${RawLink(i)}</td><td>${i.price.toFixed(2)}</td><td>${i.featured ? 'yes' : 'no'}</td></tr>`;
 const RawGroup = (g) =>
   `<section><h2>${g.title}</h2><ul>${g.links.map((l) => `<li>${RawLink(l)}</li>`).join('')}</ul></section>`;
+const RawCard = (i) =>
+  `<article class="card ${i.featured ? 'is-featured' : ''}" data-id="${i.id}" title="${i.name}"><h3>${i.name}</h3><p>${i.price.toFixed(2)}</p></article>`;
+const RawPage = (n, f) =>
+  `<main><h1>Catalogue</h1>${n.map(RawGroup).join('')}<ol>${f.map((i) => `<li>${RawLink(i)}</li>`).join('')}</ol></main>`;
+const RawTable = (rows) => `<table><tbody>${rows.map(RawRow).join('')}</tbody></table>`;
+const RawText = (s) => `<p>${s}</p>`;
 
 export const raw = {
   name: 'no escaping (speed of light)',
-  unsafe: true, // the point of this one: it is here to show what escaping costs
+  unsafe: true, // here to show what escaping costs
   link: () => RawLink(one),
   card: () =>
     `<article class="card ${one.featured ? 'is-featured' : ''}" data-id="${one.id}" title="${one.name}"><h3>${one.name}</h3><p>${one.price.toFixed(2)}</p></article>`,
@@ -88,4 +108,9 @@ export const raw = {
   escape: () => `<p>${hostile}</p>`,
   page: () =>
     `<main><h1>Catalogue</h1>${nav.map(RawGroup).join('')}<ol>${few.map((i) => `<li>${RawLink(i)}</li>`).join('')}</ol></main>`,
+  cleanLink: () => RawLink(clean().one),
+  cleanCard: () => RawCard(clean().one),
+  cleanPage: () => RawPage(clean().nav, clean().few),
+  cleanTable: () => RawTable(clean().items),
+  cleanText: () => RawText(clean().text),
 };

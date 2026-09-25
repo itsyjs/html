@@ -3,7 +3,7 @@ import { computed, ref, watch, watchPostEffect } from 'vue';
 import { withBase } from 'vitepress';
 import { HtmlError, attrs, cx, html, isHtml, raw } from '#index';
 import { choose, comment, join, map, range, when, wrap } from '#util';
-import { check, type Problem } from '#check';
+import { check, type Finding, type Problem } from '#check';
 
 const PRESETS = [
   {
@@ -53,7 +53,7 @@ const source = ref(PRESETS[0]!.code);
 const live = ref(PRESETS[0]!.code);
 
 // A tab is lit only while the editor holds its preset word for word. The first
-// edit puts it out; clicking the tab again puts the text back.
+// edit turns it off. Clicking the tab again restores the text.
 const active = computed(() => PRESETS.findIndex((preset) => preset.code === source.value));
 
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -72,8 +72,29 @@ const SCOPE = { html, attrs, cx, raw, isHtml, join, map, range, when, choose, wr
 const NAMES = Object.keys(SCOPE);
 const VALUES = Object.values(SCOPE);
 
+const errorHref = (code: number) => withBase(`/reference/errors#e${code}`);
+
+// One line of the check result. A markup problem links to its code in the error reference. An
+// accessibility finding has a rule name instead of a code, and links to the table of rules.
+interface Entry {
+  label: string;
+  href: string;
+  title: string;
+  message: string;
+  near: string;
+}
+
+const entry = (p: Problem | Finding): Entry => {
+  const { message, near } = p;
+  if ('rule' in p) {
+    const href = withBase('/api/check#accessibility');
+    return { label: p.rule, href, title: `${p.rule} in the accessibility rules`, message, near };
+  }
+  return { label: `${p.code}`, href: errorHref(p.code), title: `Code ${p.code} in the error reference`, message, near };
+};
+
 type Outcome =
-  | { kind: 'markup'; markup: string; problems: Problem[] }
+  | { kind: 'markup'; markup: string; problems: Entry[] }
   | { kind: 'error'; code?: number; message: string }
   | { kind: 'empty'; message: string };
 
@@ -83,8 +104,8 @@ const result = computed<Outcome>(() => {
 
   let fn: Function;
   try {
-    // An expression on its own is the common case; fall back to a function body
-    // so a preset can declare variables and return.
+    // A lone expression is the common case. The fallback is a function body, so
+    // a preset can declare variables and return.
     fn = new Function(...NAMES, `"use strict"; return (\n${src}\n);`);
   } catch {
     try {
@@ -104,7 +125,7 @@ const result = computed<Outcome>(() => {
 
   if (value === undefined) return { kind: 'empty', message: 'Nothing was returned. Add a return.' };
   const markup = String(value);
-  return { kind: 'markup', markup, problems: check(markup) };
+  return { kind: 'markup', markup, problems: check(markup).map(entry) };
 });
 
 const status = computed(() => {
@@ -113,27 +134,23 @@ const status = computed(() => {
   return n === 0 ? 'No problems' : n === 1 ? '1 problem' : `${n} problems`;
 });
 
-const errorHref = (code: number) => withBase(`/reference/errors#e${code}`);
-
 // The preview goes in a shadow root. Page CSS cannot cross the boundary, so the
-// markup renders on the browser's own stylesheet instead of picking up .vp-doc,
-// and a <style> the reader writes stays in here instead of restyling the site.
+// markup renders on the browser's own stylesheet, not .vp-doc. A <style> the
+// reader writes stays inside and does not restyle the site.
 //
-// `all: initial` stops the page's inherited font, colour and line-height at the
-// host, and `display: block` puts back what it took away. That is the whole
-// stylesheet; everything else the reader sees is the browser's own. The rule is
-// the weakest in the shadow cascade, so anything they write beats it.
-//
-// The surface is light in both themes, set on .pg-preview in the light DOM,
-// because `all: initial` computes `color` to black whatever `color-scheme` says.
-// Outer-tree rules beat `:host`, so the frame and background survive the reset.
-const RESET = '<style>:host{all:inherit;display:block;color-scheme:light}</style>';
+// `all: inherit` makes the host take every property from its parent, so the
+// preview uses the site's font, colour, line-height and color-scheme, and
+// follows the theme. `display: block` keeps the host a block. That is the whole
+// stylesheet; the rest is the browser's own. The rule is the weakest in the
+// shadow cascade, so anything the reader writes beats it. Outer-tree rules beat
+// `:host` too, so the padding and scrolling set on .pg-preview survive.
+const RESET = '<style>:host{all:inherit;display:block}</style>';
 const preview = ref<HTMLElement>();
 
 watchPostEffect(() => {
   const host = preview.value;
   if (!host || result.value.kind !== 'markup') return;
-  // The host is remounted whenever the pane changes state, so attach lazily.
+  // The host remounts whenever the pane changes state, so attach lazily.
   const root = host.shadowRoot ?? host.attachShadow({ mode: 'open' });
   root.innerHTML = RESET + result.value.markup;
 });
@@ -217,12 +234,8 @@ watchPostEffect(() => {
               <ul class="pg-problems">
                 <li v-for="(problem, i) in result.problems" :key="i" class="pg-problem">
                   <div class="pg-problem-line">
-                    <a
-                      class="pg-code"
-                      :href="errorHref(problem.code)"
-                      :title="`Code ${problem.code} in the error reference`"
-                    >
-                      {{ problem.code }}
+                    <a class="pg-code" :href="problem.href" :title="problem.title">
+                      {{ problem.label }}
                     </a>
                     <span>{{ problem.message }}</span>
                   </div>
@@ -247,8 +260,8 @@ watchPostEffect(() => {
   background: var(--vp-c-bg);
 }
 
-/* Preset strip: the same rules as .vp-code-group .tabs, on buttons. One row;
-   it scrolls sideways on a narrow screen instead of wrapping. */
+/* Preset strip: the same rules as .vp-code-group .tabs, on buttons. One row.
+   It scrolls sideways on a narrow screen instead of wrapping. */
 .pg-tabs {
   display: flex;
   padding: 0 4px;
@@ -312,8 +325,8 @@ watchPostEffect(() => {
   display: grid;
   grid-template-rows: auto 1fr;
   min-width: 0;
-  /* The column paints the code-block background, so an editor the reader has
-     dragged shorter than the column leaves no seam. */
+  /* The column paints the code-block background, so an editor dragged shorter
+     than the column leaves no seam. */
   background: var(--vp-code-block-bg);
 }
 
@@ -333,7 +346,7 @@ watchPostEffect(() => {
   }
 }
 
-/* Section header rows. Both columns use the same one, so the first two line up. */
+/* Section header rows. Both columns share one, so the first two line up. */
 .pg-head {
   display: flex;
   align-items: center;
@@ -378,7 +391,7 @@ watchPostEffect(() => {
   outline-offset: -2px;
 }
 
-/* Stacked under the output on a phone, so a shorter editor keeps it in reach. */
+/* On a phone the output stacks under the editor, so a shorter editor keeps it in reach. */
 @media (max-width: 959px) {
   .pg-editor {
     min-height: 200px;
@@ -432,10 +445,6 @@ watchPostEffect(() => {
 .pg-preview {
   padding: 0;
   overflow-x: auto;
-  /* A light surface in both themes: inside the shadow root `all: initial` makes
-     text black, so a dark panel would be unreadable. It reads as a small window
-     onto a page, which is what it is. */
-  background: oklch(100% 0 0);
 }
 
 .pg-muted {

@@ -10,7 +10,7 @@ Bundlers pick between them with the `development` export condition.
 
 ```txt [Vite]
 Nothing to do. Vite sets the development condition during dev and
-drops it for a production build, so you get the right one either way.
+drops it for a production build, so the right one is used either way.
 ```
 
 ```js [esbuild]
@@ -33,12 +33,12 @@ node --conditions=development --test test/*.test.ts
 :::
 
 ::: warning
-Without the condition you get the production build, where `check()` returns `[]` and every markup
-mistake goes unreported. A test suite on the production build passes whatever you write. See
-[testing](/recipes/testing#make-sure-you-are-on-the-dev-build).
+Without the condition, resolution falls back to the production build, where `check()` returns `[]`
+and every markup mistake goes unreported. A test suite on the production build passes whatever is
+written. See [testing](/recipes/testing#confirm-the-dev-build).
 :::
 
-## Formatters rewrite your markup
+## Formatters rewrite embedded markup
 
 Prettier and oxfmt both format embedded languages by default. Inside an `html` template that means
 `<br>` becomes `<br />`, which the markup check then reports as

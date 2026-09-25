@@ -1,5 +1,5 @@
 // Opt-in helpers, one export each, with no shared state, so a bundler keeps
-// only the ones you import. The list helpers return plain arrays and render
+// only the ones imported. The list helpers return plain arrays and render
 // nothing: the template they land in escapes every item for its context.
 // Only `wrap()` and `comment()` write markup, and they need `raw()` to do it.
 import { attrs, type AttrValue } from './attrs.ts';
@@ -94,13 +94,16 @@ export const choose = <T, V extends Renderable>(
 
 /**
  * Each item inside a `<tag>`, with optional attributes through `attrs()`. The
- * items are rendered by the template, so text is escaped and `Html` is not.
+ * template renders the items, so text is escaped and `Html` is not.
+ *
+ * Inside `<script>` and `<style>` an item must be `Html`, as it must in a
+ * template: escaped text there is still code.
  *
  * @example
  * ```ts
  * html`<ul>${wrap(names, 'li', { class: 'name' })}</ul>`
  * ```
- * @throws {HtmlError} code 17 for a bad tag name
+ * @throws {HtmlError} code 17 for a bad tag name, code 6 for an item in `<script>` or `<style>` that is not `Html`
  */
 export const wrap = (
   items: Iterable<Renderable>,
@@ -110,13 +113,18 @@ export const wrap = (
   if (!TAG.test(tag)) throw new HtmlError(17, __DEV__ && `bad tag name "${tag}"`);
   const open = raw(`<${tag}${attributes ? ` ${attrs(attributes).markup}` : ''}>`);
   const close = raw(`</${tag}>`);
-  return map(items, (item) => [open, item, close]);
+  // The template sees only Html here and cannot tell these tags apart, so the check is here.
+  const code = /^(script|style)$/i.test(tag);
+  return map(items, (item) => {
+    if (code && !(item instanceof Html)) throw new HtmlError(6, __DEV__ && `an item in <${tag}> must be raw()`);
+    return [open, item, close];
+  });
 };
 
 /**
  * An HTML comment that its text cannot close. A comment ends at `-->` or
- * `--!>`, so every `--` gets a space in it; `<!-->` and `<!--->` close at
- * once, so the text is padded with spaces on both sides.
+ * `--!>`, so every `--` gets a space in it. `<!-->` and `<!--->` close at
+ * once, so the text gets a space on each side.
  *
  * @example
  * ```ts

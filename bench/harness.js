@@ -1,45 +1,47 @@
 // The contenders, the case list, the fairness guard, and a thin wrapper over mitata.
 //
-// Timing used to be hand-rolled here — a batch timer, a calibration loop and a median of
-// twenty rounds — because mitata's measure() once read whatever state the V8 heap was in,
-// and whichever renderer went first paid for growing it: 240 ns against 440 ns from the
-// same build. That part is still true, and `warmup()` below is the answer to it.
+// Timing used to be hand-rolled here: a batch timer, a calibration loop and a median of
+// twenty rounds. The reason was that mitata's measure() read whatever state the V8 heap
+// was in, and whichever renderer went first paid for growing it: 240 ns against 440 ns
+// from the same build. That is still true, and `warmup()` below handles it.
 //
-// The rest of the hand-rolling was not worth keeping. measure() builds its timing loop
-// with new AsyncFunction, so every benchmark gets freshly compiled code and its own
-// monomorphic call site; the hand-rolled timer put everything through one shared `fn()`
-// that went polymorphic and could not inline the callee. That cost the fastest cases up
-// to 30% in pure overhead, and on two implementations of one small function it inverted
-// the result outright — the scanning escaper read 0.29x when the truth is 1.37x.
-// measure() is also about twice as quick over the same matrix.
+// The rest of the hand-rolled timer was not worth keeping. measure() builds its timing
+// loop with new AsyncFunction, so every benchmark gets freshly compiled code and its own
+// monomorphic call site. The hand-rolled timer sent everything through one shared `fn()`,
+// which went polymorphic and could not inline the callee. That added up to 30% overhead
+// to the fastest cases. On two implementations of one small function it inverted the
+// result: the scanning escaper read 0.29x when the truth is 1.37x. measure() is also
+// about twice as fast over the same matrix.
 //
 // Note: importing this file imports renderers/lit.js, whose first line installs a
-// global DOM shim process-wide. Every entry point that touches the harness gets it,
-// including size.js, whether or not lit is being measured.
+// global DOM shim process-wide. Every entry point that imports the harness gets it,
+// including size.js, whether or not it measures lit.
 
 import { do_not_optimize, measure } from 'mitata';
-import { CASE_KEYS, MIN_CPU_TIME } from './spec.js';
+import { CASE_KEYS, CLEAN_KEYS, MIN_CPU_TIME } from './spec.js';
 import { escaped, raw } from './renderers/baseline.js';
 import ghtml from './renderers/ghtml.js';
 import hono from './renderers/hono.js';
-import itsy from './renderers/itsy.js';
+import itsy, { trusted } from './renderers/itsy.js';
 import lit from './renderers/lit.js';
 import preact from './renderers/preact.js';
 
 export const contenders = [itsy, hono, ghtml, preact, lit, escaped, raw];
 export const baseline = itsy;
 
-export { ATTR_CASES, ATTR_KEYS, CASES, CASE_KEYS } from './spec.js';
+export { ATTR_CASES, ATTR_KEYS, CASES, CASE_KEYS, CLEAN_CASES, CLEAN_KEYS } from './spec.js';
 export const attrContenders = [itsy, preact, escaped];
+/** The clean table's four. `trusted` is in no other table: see CLEAN_CASES in spec.js. */
+export const cleanContenders = [itsy, trusted, escaped, raw];
 
 /**
- * Prove each renderer really rendered every row, really escaped, and still agrees with
+ * Prove each renderer really rendered every row, really escaped, and still matches
  * @itsy/html byte for byte wherever it ever did.
  *
- * Not every renderer can agree: ghtml emits numeric entities and escapes `=`, lit emits
- * its `<!--lit-part-->` markers, and preact's escaper leaves `>` and `'` alone. Those are
- * declared per renderer in a `differs` map with a reason, and an entry that stops being
- * true fails here too — so an exemption cannot outlive the thing it was excusing.
+ * Not every renderer can match: ghtml emits numeric entities and escapes `=`, lit emits
+ * `<!--lit-part-->` markers, and preact's escaper leaves `>` and `'` alone. Each renderer
+ * declares these in a `differs` map with a reason. An entry that stops being true also
+ * fails here, so an exemption cannot outlive the thing it excused.
  */
 export const verify = () => {
   for (const r of contenders) {
@@ -68,6 +70,18 @@ export const verify = () => {
   for (const r of attrContenders) {
     if (r.attrs() !== wantAttrs) throw new Error(`${r.name}/attrs: output does not match ${baseline.name}`);
   }
+
+  // Nor do the clean cases. With nothing to escape, the escaper and no escaper at all must agree
+  // too. That is what proves the data clean, and so fit for `trusted`.
+  if ((cleanContenders[0].cleanTable().match(/<tr[ >]/g) ?? []).length !== 1000) {
+    throw new Error('cleanTable: did not render 1000 rows');
+  }
+  for (const k of CLEAN_KEYS) {
+    const want = baseline[k]();
+    for (const r of cleanContenders) {
+      if (r[k]() !== want) throw new Error(`${r.name}/${k}: output does not match ${baseline.name}`);
+    }
+  }
 };
 
 const note = (text) => {
@@ -80,14 +94,14 @@ const clear = () => {
 /**
  * Run everything a few times, so no recorded timing is the one that grows the heap.
  *
- * measure() cannot do this for you — its own warmup is three calls behind a threshold, and
- * raising `warmup_samples` to a million changes nothing.
+ * measure() cannot do this. Its own warmup is three calls behind a threshold, and raising
+ * `warmup_samples` to a million changes nothing.
  *
- * **Warm only the renderer you are about to measure.** Warming all of them together is not
- * neutral: it makes @itsy/html read 1.75x faster, the hand-written baseline 2.28x, ghtml
- * 1.44x and preact 1.29x, while hono and lit do not move at all. Running hono's code is
- * what does it, and the effect is large enough to reverse who wins. table.js therefore
- * measures each renderer in its own process; see the comment there.
+ * **Warm only the renderer about to be measured.** Warming all of them together is not
+ * neutral. It makes @itsy/html read 1.75x faster, the hand-written baseline 2.28x, ghtml
+ * 1.44x and preact 1.29x, while hono and lit do not move. Running hono's code causes it,
+ * and the effect is large enough to reverse who wins. So table.js measures each renderer
+ * in its own process; see the comment there.
  */
 export const warmup = (keys = CASE_KEYS, who = contenders, passes = 12) => {
   for (let i = 0; i < passes; i++) {
@@ -97,27 +111,27 @@ export const warmup = (keys = CASE_KEYS, who = contenders, passes = 12) => {
 
 // A note on GC, because the options here are a trap.
 //
-// mitata collects before each measurement by default, and when `globalThis.gc` is missing it
-// does it by allocating a 1 GB Uint8Array to provoke one. The bench scripts pass
-// `--expose-gc` so it gets the real collector instead. Measured either way the numbers do not
-// move — the run-to-run spread on the 1000-row case is about 1% with the flag and without it —
-// so this is hygiene, not accuracy.
+// By default mitata collects before each measurement. When `globalThis.gc` is missing, it
+// provokes a collection by allocating a 1 GB Uint8Array. The bench scripts pass
+// `--expose-gc` so it gets the real collector instead. The numbers do not move either way:
+// the run-to-run spread on the 1000-row case is about 1% with the flag and without it. So
+// this is hygiene, not accuracy.
 //
-// Do not reach for `inner_gc`. It looks like the careful choice and it is the opposite: per
-// iteration GC accounting took the spread on that same case from 1.1% to 13.7% and inflated
-// the median by 10%.
+// Avoid `inner_gc`. It looks like the careful choice and is the opposite: per-iteration GC
+// accounting took the spread on that same case from 1.1% to 13.7% and inflated the median
+// by 10%.
 //
-// Neither option touches the two things that actually move numbers here. The gap between a
-// cold and a warm process (36%) is JIT tier-up, which is what `warmup()` below is for, and it
-// is unchanged with the real collector. The residual artefact that sets ab.js's floor is also
-// unchanged — its false-positive rate on identical source is the same either way.
+// Neither option touches the two things that really move numbers here. The gap between a
+// cold and a warm process (36%) is JIT tier-up, which `warmup()` above handles, and the
+// real collector leaves it unchanged. The residual artefact that sets ab.js's floor is also
+// unchanged: its false-positive rate on identical source is the same either way.
 
 /**
  * Nanoseconds per call for every renderer and every case: `ns[case][renderer name]`, as
  * mitata's median sample. Call `warmup()` first.
  *
- * Writes a warning to stderr if any measurement moved around enough during the run
- * that the numbers should not be trusted — a machine doing something else at the time.
+ * Writes a warning to stderr if any measurement moved enough during the run to make the
+ * numbers untrustworthy, as when the machine is busy with other work.
  *
  * @param keys Which cases to time.
  * @param who Which renderers to time them on. Defaults to all of them.
@@ -131,8 +145,8 @@ export const measureAll = async (keys = CASE_KEYS, who = contenders) => {
       note(`measuring ${k} / ${r.name}`);
       const s = await measure(() => do_not_optimize(r[k]()), { min_cpu_time: MIN_CPU_TIME });
       ns[k][r.name] = s.p50;
-      // How far the slower half ran from the fastest sample. A quiet machine sits under
-      // a few percent; a noisy one does not, and then the table is fiction.
+      // How far the slower half ran from the fastest sample. A quiet machine stays under
+      // a few percent. A noisy one does not, and then the table is fiction.
       const spread = (s.p75 - s.min) / s.min;
       if (spread > 0.15) shaky.push(`${k}/${r.name} ±${(spread * 100).toFixed(0)}%`);
     }

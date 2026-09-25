@@ -15,13 +15,13 @@ const walk = async (dir: string): Promise<string[]> => {
   return out.sort();
 };
 
-// The deploy workflow passes the repository name; a custom domain drops it.
+// The deploy workflow passes the repository name. A custom domain drops it.
 const base = process.env.DOCS_BASE ?? '/';
 
 // The playground imports the library source through the `#*` subpath in
-// package.json, so `__DEV__` has to be defined here the way tsdown defines it
-// for a build. Without it the error messages read `E6` and `check()` returns
-// nothing, which is most of what the site has to show.
+// package.json, so `__DEV__` is defined here, as tsdown defines it for a
+// build. Without it, error messages read `E6` and `check()` returns nothing,
+// and that is most of what the site has to show.
 export default defineConfig({
   title: '@itsy/html',
   description: 'Tagged-template HTML renderer. Isometric, zero dependencies, context-aware escaping.',
@@ -30,20 +30,20 @@ export default defineConfig({
   lastUpdated: true,
   vite: { define: { __DEV__: 'true' } },
   markdown: {
-    // Both are warm and low-saturation, which sits under the orange brand
-    // better than the stock GitHub pair. Only the token colors come across --
-    // VitePress paints the block from --vp-code-block-bg, so neither theme's
-    // own background is used.
+    // Both are warm and low-saturation, and sit under the orange brand better
+    // than the stock GitHub pair. Only the token colors carry over. VitePress
+    // paints the block from --vp-code-block-bg, so neither theme's own
+    // background is used.
     //
-    // Not everforest-light: it is soft by design and measures a 2.79 median
-    // against this background, with six of its nine token colors under 3:1.
-    // kanagawa-lotus is the warmest light theme bundled and reads better at
-    // 4.15. No syntax theme clears 4.5 across the board, so this is a relative
-    // choice, not a passing grade.
+    // Not everforest-light: it is soft by design and has a 2.79 median
+    // contrast against this background, with six of its nine token colors
+    // under 3:1. kanagawa-lotus is the warmest bundled light theme and reads
+    // better, at 4.15. No syntax theme clears 4.5 across the board, so this is
+    // a relative choice, not a passing grade.
     theme: { light: 'kanagawa-lotus', dark: 'everforest-dark' },
     config(md) {
-      // A fence marked ```ts run is evaluated at build time and its result is
-      // rendered beneath it as a second, highlighted fence. See run.ts.
+      // A fence marked ```ts run runs at build time. Its result renders
+      // beneath it as a second, highlighted fence. See run.ts.
       const fence = md.renderer.rules.fence!;
       md.renderer.rules.fence = (tokens, idx, options, env, self) => {
         const token = tokens[idx]!;
@@ -67,8 +67,8 @@ export default defineConfig({
       };
     },
   },
-  // Two plain-text builds of the site for anything reading it as text rather
-  // than browsing it: an index, and the whole thing in one file.
+  // Two plain-text builds of the site, for tools that read it as text: an
+  // index, and the whole site in one file.
   async buildEnd({ srcDir, outDir, site }) {
     const files = await walk(srcDir);
     const url = (file: string) => '/' + relative(srcDir, file).replace(/(?:index)?\.md$/, '');
@@ -97,8 +97,8 @@ export default defineConfig({
     const full = pages.map((p) => `\n\n<!-- ${p.url} -->\n\n${p.body}`).join('');
     await writeFile(join(outDir, 'llms-full.txt'), agents + full);
   },
-  // VitePress rewrites `themeConfig.logo` for the base but not head hrefs, so
-  // these carry it themselves or they 404 on Pages.
+  // VitePress adds the base to `themeConfig.logo` but not to head hrefs. These
+  // carry the base themselves, or they 404 on Pages.
   head: [
     ['meta', { name: 'theme-color', content: '#e34f26' }],
     ['link', { rel: 'icon', type: 'image/svg+xml', href: `${base}favicon.svg` }],
@@ -148,7 +148,6 @@ export default defineConfig({
           { text: '/util', link: '/api/util' },
           { text: '/frame', link: '/api/frame' },
           { text: '/check', link: '/api/check' },
-          { text: '/a11y', link: '/api/a11y' },
           { text: '/create', link: '/api/create' },
         ],
       },

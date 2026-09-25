@@ -3,7 +3,7 @@ import { render } from '@lit-labs/ssr';
 import { html } from 'lit';
 import { few, hostile, items, nav, one } from '../fixtures.js';
 
-// `html` here only builds a TemplateResult; @lit-labs/ssr turns it into a string.
+// `html` here only builds a TemplateResult. @lit-labs/ssr turns it into a string.
 // Collecting that stream is part of the job, so it is inside the timed function.
 const toString = (result) => {
   let out = '';
@@ -24,7 +24,7 @@ const WHY = 'lit emits <!--lit-part--> and <!--lit-node--> hydration markers';
 export default {
   name: 'lit + @lit-labs/ssr',
   // lit wraps everything in <!--lit-part--> and <!--lit-node--> hydration markers, so its
-  // output can never be byte-identical to a plain renderer. That is every case here.
+  // output never matches a plain renderer byte for byte, in any case here.
   differs: { link: WHY, card: WHY, page: WHY, table: WHY, escape: WHY },
   link: () => toString(Link(one)),
   card: () =>

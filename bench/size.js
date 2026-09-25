@@ -1,12 +1,12 @@
-// Bytes produced, for the same page, by each renderer.
+// Bytes produced by each renderer for the same page.
 //
-// Throughput is not the only cost of an SSR renderer: what it emits travels over
-// the wire on every request. lit's hydration markers are the reason it is here.
+// Throughput is not the only cost of an SSR renderer: its output crosses the wire
+// on every request. lit's hydration markers are the reason this file exists.
 
 import { CASES, CASE_KEYS, baseline, contenders, verify } from './harness.js';
 
-// Same guard as the timed entry points: byte counts for a renderer that rendered
-// nothing, or failed to escape, are worse than no byte counts at all.
+// Same guard as the timed entry points. Byte counts for a renderer that rendered
+// nothing, or failed to escape, are worse than none at all.
 verify();
 
 const bytes = (s) => Buffer.byteLength(s, 'utf8');

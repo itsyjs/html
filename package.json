@@ -38,12 +38,6 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
-    "./a11y": {
-      "types": "./dist/a11y.d.ts",
-      "development": "./dist/a11y.dev.js",
-      "import": "./dist/a11y.js",
-      "default": "./dist/a11y.js"
-    },
     "./attrs": {
       "types": "./dist/attrs.d.ts",
       "development": "./dist/attrs.dev.js",
@@ -133,7 +127,13 @@
       "name": "@itsy/html (dev)",
       "path": "dist/index.dev.js",
       "import": "{ html, attrs, raw }",
-      "limit": "4.5 KB"
+      "limit": "6 KB"
+    },
+    {
+      "name": "@itsy/html (with trusted)",
+      "path": "dist/index.js",
+      "import": "{ html, attrs, raw, trusted }",
+      "limit": "2 KB"
     },
     {
       "name": "@itsy/html/attrs",
@@ -151,19 +151,7 @@
       "name": "@itsy/html/check (dev)",
       "path": "dist/check.dev.js",
       "import": "{ check }",
-      "limit": "4 KB"
-    },
-    {
-      "name": "@itsy/html/a11y",
-      "path": "dist/a11y.js",
-      "import": "{ a11y, without }",
-      "limit": "150 B"
-    },
-    {
-      "name": "@itsy/html/a11y (dev)",
-      "path": "dist/a11y.dev.js",
-      "import": "{ a11y, without }",
-      "limit": "2.5 KB"
+      "limit": "9.5 KB"
     },
     {
       "name": "@itsy/html/frame",
@@ -175,13 +163,13 @@
       "name": "@itsy/html/frame (dev)",
       "path": "dist/frame.dev.js",
       "import": "{ frame, head, element }",
-      "limit": "6 KB"
+      "limit": "7 KB"
     },
     {
       "name": "@itsy/html/util",
       "path": "dist/util.js",
       "import": "{ join, map, range, when, choose, wrap, comment }",
-      "limit": "1.2 KB"
+      "limit": "1.25 KB"
     },
     {
       "name": "@itsy/html/util (join only)",

@@ -1,7 +1,7 @@
 # @itsy/html
 
 ```ts
-import { html, attrs, cx, raw, Html, isHtml, HtmlError } from '@itsy/html';
+import { html, trusted, attrs, cx, raw, Html, isHtml, HtmlError } from '@itsy/html';
 import type { Renderable, AttrValue, AttrGroup, ClassValue, StyleValue } from '@itsy/html';
 ```
 
@@ -24,6 +24,7 @@ render of a template that breaks a rule. Values never throw except for [code 7](
 | quoted attribute      | the same escape                                             |
 | URL attribute         | the same escape, then [a scheme check](/security/url-guard) |
 | inside a tag          | `attrs()` or `raw()` only                                   |
+| right after `<`       | `raw()` only: the browser reads a value there as a tag name |
 | `<script>`, `<style>` | `raw()` only                                                |
 | comment               | `raw()` only                                                |
 
@@ -31,6 +32,19 @@ render of a template that breaks a rule. Values never throw except for [code 7](
 - It runs once per template, cached on the strings array, so a markup error throws on the first
   render and repeated renders do no extra work.
 - Unquoted attribute values and `on*` attributes are refused at scan time, whatever the value.
+- A `<script>` or `<style>` with a `<!--` or `<![CDATA[` still open does not end at its end tag: the
+  browser may read that tag as text, so the scan keeps the block open, and a value after it is
+  refused rather than escaped for a context it may not be in.
+
+## trusted
+
+A template tag like `html`, without the escaping, for templates whose values are safe.
+
+```ts
+const Nav = (links: Link[]) => trusted`<nav>${links.map((l) => trusted`<a href="${l.href}">${l.label}</a>`)}</nav>`;
+```
+
+On clean data it is [1.5 to 2.5 times faster](/reference/benchmarks#nothing-to-escape) than `html`.
 
 ## raw
 
@@ -48,26 +62,52 @@ html`<div>${raw(sanitized)}</div>`;
 
 The return type. A small wrapper around the markup, not a string.
 
+Keep it an `Html` while the page is being built, and take the string once, where it leaves the
+library:
+
 ```ts
-view.markup; // the markup itself: no coercion, typed as a string
-String(view); // same thing, via toString()
-`${view}`;
-el.innerHTML = view; // coerces too, though TypeScript will be grumpy about it
+res.send(Page(data).markup);
+res.send(Page(data).render()); // the same, for those who read it as the last step
 ```
 
-Prefer `view.markup` where you have an `Html` in hand. It is a property read rather than a
-coercion, and it says what you mean.
+`String(view)` and `` `${view}` `` give the same string, but TypeScript works better with `.markup`.
 
-::: warning
-It is an object. `typeof` reports `'object'` and an empty one is truthy, so coerce where a
-primitive is due.
+::: warning Nest the `Html`, not its `.markup`
+In a template a string is text, so `.markup` is escaped a second time:
+
+```ts
+html`<div>${view}</div>`; // <div><p>a &lt; b</p></div>
+html`<div>${view.markup}</div>`; // <div>&lt;p&gt;a &amp;lt; b&lt;/p&gt;</div>
+```
+
+`check()` and `frame()` take the `Html` too.
 :::
 
-It behaves at the boundaries you would expect it to:
+### Handing it over
+
+Passed as-is, without `.markup`:
+
+| where                                     | what happens                                                 | TypeScript error |
+| ----------------------------------------- | ------------------------------------------------------------ | ---------------- |
+| Express `res.send(view)`                  | sent as JSON, quotes included, even after `res.type('html')` | no               |
+| Fastify `reply.send(view)`, `return view` | sent as JSON; after `reply.type('text/html')`, a 500         | no               |
+| Koa `ctx.body = view`                     | sent as JSON, even with `ctx.type = 'html'`                  | no               |
+| `node:http` `res.end(view)`               | throws `ERR_INVALID_ARG_TYPE`                                | no               |
+| Hono `c.html(view)`                       | works                                                        | yes              |
+| `new Response(view)`                      | the markup, as `text/plain` unless the header says otherwise | yes              |
+| `el.innerHTML = view`                     | works                                                        | yes              |
+
+The frameworks that get it wrong type the body as `any`, so nothing flags it before a request
+does. Tested with Express 5.2, Fastify 5.12, Koa 3.2 and Hono 4.13.
+
+Everywhere else:
 
 |                                        |                                                                                                                        |
 | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `console.log(view)`                    | prints `Html '<p>…</p>'` in the development build                                                                      |
+| `typeof view`, `if (view)`             | `'object'`, and an empty one is truthy                                                                                 |
+| `assert.equal(view, str)`              | fails: an object is never strictly equal to a string. Compare `view.markup`                                            |
+| `structuredClone(view)`, `postMessage` | `{}`: the markup is in a private field and does not survive the copy. Send `view.markup`                               |
+| `console.log(view)`                    | `Html '<p>…</p>'` in the development build, `Html {}` in production                                                    |
 | `JSON.stringify({ view })`             | gives the markup — there is a `toJSON`                                                                                 |
 | `Object.prototype.toString.call(view)` | `[object Html]`                                                                                                        |
 | `${view}`, `view + ''`, `String(view)` | all go through one `Symbol.toPrimitive`, a nanosecond or so cheaper than the `toString` lookup they would otherwise do |
@@ -76,12 +116,12 @@ The inspect hook is development-only — it is a debugging affordance, and the p
 trades messages for bytes everywhere else too.
 
 A `#private` field makes TypeScript treat it as its own type, so a plain string will not pass
-where an `Html` is expected. `raw` and `html` are the only ways you should create one.
+where an `Html` is expected. `raw` and `html` are the only supported ways to create one.
 
 `instanceof` and [`isHtml`](#ishtml) both match on a realm-global brand rather than the prototype
 chain, so two copies of this library in one dependency tree still recognise each other's `Html`.
 Without that, a nested template from the other copy would be escaped as if it were text, silently.
-It is forgeable, but so is `raw()` — both need code running in your process.
+It is forgeable, but so is `raw()` — both need code already running in the process.
 
 ### Why it is not a `String` subclass
 

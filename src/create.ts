@@ -1,7 +1,7 @@
 // Opt-in: an `html` and `attrs` pair with its own URL guard and whitespace rule.
-// The root exports use the defaults; this entry exists so a page that needs
-// another scheme, or markup kept as written, can have it without everyone
-// else paying for the options.
+// The root exports use the defaults. This entry lets a page allow another
+// scheme, or keep markup as written, without every other page paying for the
+// options.
 import { createAttrs } from './attrs.ts';
 import { createTag } from './html.ts';
 import { SCHEMES } from './shared.ts';
@@ -24,8 +24,8 @@ export interface CreateOptions {
 
 /**
  * An `html` tag and a matching `attrs()` that share one URL guard and one
- * template cache. Make the pair once, at module scope, and use it everywhere
- * on that page. `frame` and `wrap()` keep the defaults.
+ * template cache. Make the pair once, at module scope, and use it across that
+ * page. `frame` and `wrap()` keep the defaults.
  *
  * @example
  * ```ts

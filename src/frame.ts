@@ -21,7 +21,7 @@ export interface HeadEntry {
   key?: string;
 }
 
-/** What `head` and `scripts` accept: entries, or ready-made `Html` that is passed through as-is and never deduplicated. */
+/** What `head` and `scripts` accept: entries, or ready-made `Html`, which passes through as is and is never deduplicated. */
 export type FramePart = HeadEntry | Html;
 
 /** Everything `frame()` takes. Only `lang` and `title` are required. */
@@ -109,8 +109,8 @@ const open = (tag: string, a: Record<string, AttrValue> | undefined): string => 
 };
 
 /**
- * Renders one entry. Void elements get no end tag, a `<script>` or `<style>` body must be `Html`,
- * a function body is called, and the nonce is added if the entry has none.
+ * Renders one entry. A void element gets no end tag. A `<script>` or `<style>` body must be `Html`.
+ * A function body is called. The nonce is added if the entry has none.
  *
  * @example
  * ```ts
@@ -142,7 +142,7 @@ export const element = (e: HeadEntry, nonce?: string): Html => {
 };
 
 // The merged head: identity to rendered element. A Map keeps insertion order, and setting
-// a key that already exists keeps its place. That is exactly "later wins, in the earlier position".
+// a key that already exists keeps its place. That gives "later wins, in the earlier position".
 type Merged = Map<string | symbol, string>;
 
 // Accepts one part, a list of parts, or nothing, and always gives back a list.
